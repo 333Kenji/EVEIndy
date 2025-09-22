@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.egg-info/
+.eggs/
+.build/
+dist/
+build/
+.pytest_cache/
+
+# Envs
+.env
+.venv/
+IndyCalculator/
+
+# Editors/OS
+.vscode/
+.idea/
+.DS_Store
+
+# Node (if you add a frontend later)
+node_modules/
