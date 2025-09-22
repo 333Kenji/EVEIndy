@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.black]
+# Run black via IndyCalculator/bin/python to ensure use of pinned interpreter
+line-length = 100
+target-version = ["py311"]
+include = "\\.pyi?$"
+exclude = '''
+(
+    /IndyCalculator/
+)
+'''
+
+[tool.ruff]
+line-length = 100
+respect-gitignore = true
+target-version = "py311"
+src = ["app", "indy_math", "tests"]
+extend-exclude = ["IndyCalculator/"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B"]
+
+[tool.ruff.format]
+quote-style = "double"
+
+[tool.pytest.ini_options]
+pythonpath = ["app", "indy_math"]
+addopts = "--maxfail=1 --disable-warnings -q"
