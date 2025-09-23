@@ -34,7 +34,7 @@ services:
         condition: service_healthy
       redis:
         condition: service_started
-    command: /bin/sh -c "pip install -r requirements.txt && python -m alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"
+    command: /bin/sh -c "pip install -r requirements.txt && python -m alembic upgrade head && uvicorn app.main:app --reload --reload-dir app --reload-dir indy_math --reload-dir core --host 0.0.0.0 --port 8000"
     ports:
       - "8000:8000"
   worker:
@@ -71,9 +71,12 @@ services:
     working_dir: /app
     volumes:
       - ./:/app
+    environment:
+      CHOKIDAR_USEPOLLING: "true"
+      WATCHPACK_POLLING: "true"
     depends_on:
       - api
-    command: /bin/sh -c "cd frontend && (npm ci || npm install) && npm run dev -- --host 0.0.0.0"
+    command: /bin/sh -c "cd frontend && (npm ci || npm install) && npm run dev -- --host 0.0.0.0 --strictPort"
     ports:
       - "5173:5173"
 volumes:
