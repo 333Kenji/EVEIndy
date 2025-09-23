@@ -8,7 +8,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
-from typing import Protocol, Sequence
+from typing import Literal, Protocol, Sequence
+
+
+JobActivity = Literal["manufacturing", "reaction", "invention", "research"]
 
 
 @dataclass(frozen=True)
@@ -17,7 +20,7 @@ class Job:
     owner_scope: str
     char_id: int
     type_id: int
-    activity: str
+    activity: JobActivity
     runs: int
     start_time: datetime
     end_time: datetime | None

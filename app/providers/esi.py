@@ -27,6 +27,7 @@ class IndustryJob(BaseModel):
     job_id: int
     blueprint_type_id: int
     runs: int
+    activity_id: int
     status: str
     start_date: datetime
     end_date: datetime | None = None
