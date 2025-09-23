@@ -8,13 +8,13 @@ from __future__ import annotations
 
 from datetime import datetime
 from decimal import Decimal
-from typing import Sequence
+from typing import Final, Sequence
 
 from app.providers.esi import ESIClient, IndustryJob
-from app.repos import InventoryRepo, Job, JobsRepo
+from app.repos import InventoryRepo, Job, JobActivity, JobsRepo
 
 
-_ACTIVITY_MAP = {
+_ACTIVITY_MAP: Final[dict[int, JobActivity]] = {
     1: "manufacturing",
     2: "research",
     3: "research",
@@ -25,7 +25,7 @@ _ACTIVITY_MAP = {
 }
 
 
-def _translate_activity(activity_id: int) -> str:
+def _translate_activity(activity_id: int) -> JobActivity:
     try:
         return _ACTIVITY_MAP[activity_id]
     except KeyError as exc:  # pragma: no cover - guardrail for unexpected IDs
