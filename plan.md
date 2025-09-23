@@ -1,236 +1,62 @@
-# Architecture Overview
-- React SPA (inventory dashboards, SPP⁺ controls) talks to a FastAPI service tier over HTTPS; the API brokers all reads/writes to durable stores and exposes deterministic math-core outcomes.
-- FastAPI layer coordinates with Postgres (durable state: inventory, jobs, orders, telemetry) and Redis (ephemeral caches, job queues). Domain services invoke pure math-core functions for costing, SPP⁺, and indicators; math modules never reach outside their injected inputs.
-- Celery worker pool executes asynchronous syncs (ESI, price refresh, indicator recompute) and long-running math tasks. APScheduler seeds recurring tasks into Celery.
-- Provider adapters (ESIClient, Adam4EVEProvider, FuzzworkProvider) encapsulate all external calls with retries, backoff, and circuit-breakers; they publish data back through Redis + Postgres snapshots.
-- Stateless math core is packaged as a Python module (`indy_math`) consumed by API and workers. All stateful concerns (inventory reservations, caches, preferences) reside in FastAPI service/DB layers per constitution.
+# Current Architecture Snapshot
+- **API & Services**: FastAPI app (`app/main.py`) exposes health probes plus domain routers for inventory, BOM/costing, analytics, planning, market data, systems metadata, rig lookups, UI state, and rate limiter metrics. Each router calls a service module that composes SQLAlchemy queries, Redis cache access, and math-core functions.【F:app/main.py†L1-L36】【F:app/api/__init__.py†L1-L23】
+- **Math Core**: `indy_math` holds deterministic modules for consume-only costing, sell probability (SPP⁺), indicators, and the production planner. All modules accept explicit contexts so tests and workers can reuse them without side effects.【F:indy_math/costing.py†L1-L170】【F:indy_math/planner.py†L1-L120】
+- **Persistence**: Alembic migrations provision core ledgers (`inventory`, `inventory_by_loc`, `acquisitions`, `consumptions`, `industry_jobs`, `buy_orders`, `orderbook_snapshots`, `consumption_log`), UI state, SDE subset tables (`type_ids`, `blueprints`, `rigs`, `structures`, `cost_indices`), and historical `market_snapshots`. Timestamp triggers and deterministic enums enforce consistency.【F:migrations/versions/20240416_01_initial_schema.py†L1-L170】【F:migrations/versions/20240416_02_sde_schema.py†L1-L200】
+- **Caches & Background Work**: Redis caching (`app/cache.py`) provides TTL policies with last-good fallbacks, and APScheduler/Celery manage SDE autoload scans plus periodic price and indicator jobs. Rate limiting is centralized through `core.ratelimiter` with metrics exposed under `/metrics`.【F:app/cache.py†L1-L87】【F:app/sde_autoload.py†L77-L105】【F:app/rate_limit.py†L1-L49】
 
-# Domain Model & Schema (initial migrations)
-| Table | Columns (type) | Keys & Indexes | Primary Workflows |
+# Product Milestones & Status
+| Milestone | Scope | Status | Notes |
 | --- | --- | --- | --- |
-| `inventory` | owner_scope (text), type_id (int4), qty_on_hand (numeric), avg_cost (numeric), updated_at (timestamptz) | PK `inventory_pkey(owner_scope, type_id)`; index on `(owner_scope, avg_cost)` for reporting | Rolling-average valuation per item at corp+alts scope. |
-| `inventory_by_loc` | owner_scope, type_id, location_id (bigint), qty_on_hand, qty_reserved, qty_in_transit, updated_at | PK `(owner_scope, type_id, location_id)`; partial index on `qty_reserved > 0` | Location buckets (On-hand prod, At Jita incl. in-transit, Open Buy Orders intent). |
-| `acquisitions` | id (uuid), ts, owner_scope, type_id, qty, unit_cost, source(enum: market, industry_excess, contract), location_id, ref_job_id, ref_order_id | idx on `(owner_scope, ts DESC)`; FK `ref_job_id` → `industry_jobs`, `ref_order_id` → `buy_orders` | Rolling-average updates on acquisitions; audit trail. |
-| `consumptions` | id (uuid), ts, owner_scope, type_id, qty, reason(enum: job_run, writeoff), location_id, ref_job_id | idx `(ref_job_id, type_id)`; FK to `industry_jobs` | Consume-only costing ledger feeding job cost reports. |
-| `industry_jobs` | job_id (bigint), char_id (bigint), type_id, activity(enum), runs(int), start_time, end_time, output_qty, status(enum queued/active/delivered/cancelled), location_id, facility_id, fees_isk(numeric) | PK job_id; idx `(status, end_time)` for scheduling; idx `(owner_scope, status)` via view (owner derived) | Reservations, WIP tracking, lead-time inputs for SPP⁺. |
-| `buy_orders` | order_id (bigint), owner_scope, type_id, location_id, region_id, price(numeric), remaining_qty, issued_ts, last_seen_ts, status(enum open/filled/cancelled) | PK order_id; idx `(owner_scope, status)`; idx `(type_id, region_id)` | Drives Open Buy bucket and replenishment signals. |
-| `orderbook_snapshots` | id (uuid), ts, region_id, type_id, side(enum bid/ask), best_px, best_qty, depth_qty_1pct, depth_qty_5pct, stdev_pct | idx `(type_id, region_id, ts DESC)`; uniqueness constraint `(region_id, type_id, side, ts)` | Inputs to indicators, depth awareness for SPP⁺. |
-| `consumption_log` | id (uuid), ts, owner_scope, type_id, qty, location_id, ref_job_id, note(text) | idx `(ts DESC)`; FK `ref_job_id` | Immutable audit of reservations released/consumed (distinct from aggregate `consumptions`). |
+| **Foundation** | Environment bootstrap, FastAPI skeleton, base schema, health probes | ✅ Complete | T-0001–T-0003 delivered requirements, app skeleton, and migrations; documentation and tooling are in place.【F:README.md†L1-L32】【F:migrations/versions/20240416_01_initial_schema.py†L1-L170】 |
+| **Data & SDE Tooling** | SDE download/load CLIs, subset schema, auto-loader | ✅ Complete | `utils/fetch_and_load_sde.py`, subset migrations, and `app.sde_autoload` satisfy T-0034–T-0037/T-0039–T-0042. Remaining work is refining tests and docs (see backlog).【F:app/sde_autoload.py†L1-L105】【F:utils/fetch_and_load_sde.py†L1-L200】 |
+| **Inventory & Costing** | Rolling-average ledger, WIP, BOM tree, costing, price history | ⚠️ In Progress | Services/endpoints exist (`/inventory/*`, `/bom/*`, `/prices/*`), but T-0077, T-0078, T-0047, and T-0048 stay open until determinism tests and coverage land. |
+| **Market Analytics** | Indicators, SPP⁺, caching, rate limiter metrics | ⚠️ In Progress | `/analytics/*` and `/metrics` are live; Celery indicator recompute task is still a stub, and contract tests for providers remain to be written (T-0012, T-0049–T-0052). |
+| **Planner & UI State** | Planner endpoints, systems/structures metadata, UI persistence | ⚠️ In Progress | Planner math is wired (`/plan/*`, `/systems`, `/structures/rigs`, `/state/ui`). Planner integration tests, frontend wiring, and UI polish tasks (T-0079–T-0083) remain open. |
+| **Refactor Preparation** | Repository layer, cache abstraction, typed contracts | 🚧 Planned | Detailed below; tracked by new tasks T-0101–T-0104. |
 
-Migration checklist:
-- [ ] All monetary fields use `NUMERIC(28,4)`; quantities use `NUMERIC(20,2)`.
-- [ ] Add `created_at`/`updated_at` triggers via `pg_timestamps` extension.
-- [ ] Views: `inventory_coverage_view` aggregating `inventory_by_loc` buckets for API.
-- [ ] Ensure referential integrity with `ON UPDATE CASCADE` for dependent IDs from ESI.
+# Near-Term Roadmap (Pre-Refactor)
+1. **Stabilize Inventory & Costing math**
+   - Finish determinism/fixture coverage for `indy_math.costing` and costing endpoints (T-0047, T-0048, T-0082).
+   - Extend `/inventory/wip` tests to confirm ESI sync idempotency and reservations (T-0078).
+2. **Harden Market Analytics**
+   - Implement real indicator recompute worker and cache warming loops (T-0049–T-0052).
+   - Add HTTP fixture tests for Adam4EVE/Fuzzwork adapters, ensuring rate-limit backoff paths (T-0012).
+3. **Planner Integration & UI**
+   - Provide API schemas (Pydantic models) for `/plan/*` and wire the React frontend selectors (T-0043–T-0046, T-0044, T-0045, T-0081).
+   - Ensure planner output merges with inventory/WIP insights for coverage dashboards before UI polish.
+4. **Operations Readiness**
+   - Finalize `/metrics` expansion to include cache hit rates and worker heartbeat stats.
+   - Document SDE autoload troubleshooting and offline workflows in docs/setup (extend T-0035/T-0037 docs commitments).
 
-# Industry Calculations & Static Data Alignment
-- **Scope**: Formalize the "industry core" alongside the math core so that manufacturing, research, invention, reactions, and planetary industry calculations are deterministic, replayable, and backed by static data from the SDE mirror.
-- **Activities & Flows**:
-  - *Manufacturing*: Blueprint (BPO/BPC) + inputs (minerals, PI goods, components, R.A.M./R.Db, etc.) → finished item. Respect run counts and output quantities declared on the blueprint activity records.
-  - *Research*: BPO research for Material Efficiency (ME) and Time Efficiency (TE); calculate new ME/TE multipliers using CCP base modifiers × structure/rig/skill bonuses.
-  - *Copying*: BPO → BPC creation with finite run counts; expose copy time and run caps for downstream invention/manufacturing.
-  - *Invention*: T1 BPC + datacores + optional decryptor → probabilistic T2 BPC. Track decryptor-driven changes to ME/TE/run count and success chance adjustments from skills.
-  - *Reactions*: Raw inputs (moongoo, PI, gas) → intermediate/advanced reaction materials. Job math parallels manufacturing (SCI, facility modifiers, tax), but uses refinery structure modifiers and reaction-specific rigs.
-  - *Reprocessing*: Ores/ice/salvage → refined minerals/parts using reprocessing skills, implant bonuses, and structure rigs; outputs feed manufacturing inputs.
-  - *Planetary Industry*: Planet resource chains from P0 → P1/P2/P3/P4 with extractor-head cycles, facility tax, and routing/storage losses.
-- **Blueprint Constructs**:
-  - Persist BPO vs BPC distinctions: BPOs have infinite runs and allow research/copy; BPCs have finite runs, carry ME/TE, and feed manufacturing/invention.
-  - Track ME/TE separately per blueprint copy, storing multipliers in normalized tables so calculations can retrieve canonical efficiencies.
-  - T2 BPCs produced by invention are immutable (no further research/copy); store provenance for audit and downstream profitability.
-- **Job Cost & Time Model**:
-  - Job cost formula: `estimated_item_value × (system_cost_index × structure_modifier + facility_tax + scc_surcharge [+ alpha_surcharge])`; ensure each factor is a column or joinable attribute for deterministic recompute.
-  - Job time formula: `base_time × time_modifiers(structure, rigs, skills, TE)`; maintain TE as a fractional multiplier.
-  - System Cost Index (SCI) is activity-specific and system-wide; store historical SCI snapshots keyed by system + activity for replay analysis.
-- **Static Data Requirements** (SDE mirror → local schema):
-  - `type_ids`: Item metadata (category, group, market flags) to align blueprint outputs and reaction inputs.
-  - `blueprints`: Activity rows (manufacturing, research, copying, invention, reactions) with base times, base materials, products, and required skills.
-  - `ram_activities` / `industry_activity_materials` / `industry_activity_products`: Normalized tables to hydrate job graphs without bespoke parsing.
-  - `mapSolarSystems`, `mapConstellations`, `mapRegions`: For SCI joins and facility location metadata.
-  - `staStations` / structure definitions: Provide default tax rates, rig compatibility, and service availability.
-  - `invTraits` / `dgmTypeAttributes`: Pull ME/TE caps, decryptor modifiers, and reaction-specific flags (simple vs complex).
-- **Industry Core Module**:
-  - Create a pure `indy_industry` module parallel to `indy_math`, exposing deterministic functions such as `compute_job_cost`, `compute_job_time`, `calculate_materials_needed`, `simulate_invention`, and `simulate_reaction`.
-  - Inputs: immutable contexts composed of blueprint records, SDE-derived modifiers, character skills, structure/rig bonuses, and pricing feeds when required for ISK valuation.
-  - Outputs: structured results (e.g., `JobCostBreakdown`, `MaterialConsumption`, `InventionOutcomeDistribution`) that can be stored alongside job executions and reused for audit.
-- **Schema Alignment Goals**:
-  - Normalize blueprint hierarchies so the database can materialize full material trees (manufacturing → reaction → PI) without ad-hoc joins.
-  - Persist job execution summaries referencing blueprint ID, runs, ME/TE snapshot, facility, SCI, and calculated cost/time. This enables recomputation and supports profitability dashboards.
-  - Ensure PI chains are represented as adjacency lists or recipes so production planners can derive required extractor and factory counts.
-  - Mirror invention outcomes (success chance, resulting runs, ME/TE) to allow deterministic simulation and backtesting against actual job logs.
-- **Profitability & Sensitivity**:
-  - Track key levers—ME/TE, structure modifiers, skill multipliers, SCI, taxes, SCC surcharge, alpha surcharge—so the industry core can surface contribution margins per job.
-  - Support scenario analysis: swap structures/rigs, adjust skill levels, or change SCI to evaluate sensitivity before committing jobs.
-- **Integration with Math Core**:
-  - Math core `cost_item` should delegate to industry core when a make decision occurs; industry core returns bill-of-materials expansions, job fees, time estimates, and probabilistic outputs (for invention) as pure data structures.
-  - Maintain strict purity: no DB/network access inside industry core; contexts assembled by service layer using cached SDE data.
-- **Testing Commitments**:
-  - Golden fixtures per activity type (manufacturing, invention success/failure paths, reactions, PI chains) to assert deterministic outputs.
-  - Property tests for invariants (e.g., ME/TE never increase material/time requirements beyond baseline; invention probability sums = 1).
-  - Cross-verify job cost/time outputs against CCP examples to validate formulas.
+# Refactor Preparation Goals
+To smooth the upcoming architecture refactor, we will:
+- **T-0101 — Session Manager Extraction**: introduce a shared engine/session factory so services stop instantiating ad-hoc engines. Depends on completion of tests for inventory/costing to avoid regressions.
+- **T-0102 — Cache Facade Cleanup**: wrap `CacheClient` access behind helper functions so services no longer call `_get_value`/`_set_value` directly. Enables pluggable caches and clearer metrics.
+- **T-0103 — Repository Implementations**: create `app.repos.pg_inventory` and `pg_jobs` implementations that fulfill the protocol interfaces used by workers. This isolates SQL from business logic ahead of refactor.
+- **T-0104 — API Contract Typing**: add request/response models for analytics, costing, and planner routes. Once types are in place we can generate client SDKs during the refactor.
+These tasks can begin once the existing backlog achieves deterministic tests; no schema changes are anticipated, so risk to production data is low.
 
-# Core Algorithms ("math core")
-```python
-@dataclass(frozen=True)
-class CostResult:
-    consumed_cost: Decimal
-    consumed_qty: Decimal
-    excess_to_inventory: Mapping[int, Decimal]
-    fee_split: Mapping[str, Decimal]
-    trace: CostTrace
+# Execution Details & Dependencies
+- **Inventory & Costing**: T-0077 feeds T-0078 (WIP) and T-0082 (costing policy). Costing UI (T-0047/T-0048) should wait until math fixtures stabilize. `/bom/cost` already mixes rolling-average and spot pricing, so test scaffolding should reuse that implementation.【F:app/services/costing_service.py†L1-L109】
+- **Market Data**: Historical price charts (T-0050–T-0052) rely on `market_snapshots` produced by `tasks.price_refresh`; ensure the worker runs with representative fixtures before UI binding.【F:tasks.py†L1-L55】
+- **Planner Workstream**: T-0079 (weekly planner) and T-0080 (builder recommender) are partially realized by current planner endpoints but require validation of slot handling and overflow scheduling. Follow-up UI tasks (T-0081–T-0083) depend on these APIs plus inventory/WIP stability.
+- **Frontend Integration**: Planner, BOM, and analytics endpoints expose JSON suited for TanStack Query; update `frontend` clients once API contracts are typed (future T-0104).
 
-def cost_item(type_id: int, qty_needed: int, ctx: CostContext) -> CostResult:
-    """Pure function: greedy integer batches, consumes inventory before triggering make/buy recipes."""
-```
-- Inputs: `CostContext` supplies immutable snapshots (inventory levels, blueprints, bill-of-materials, fee schedule, rolling averages). No DB or network access.
-- Invariants:
-  - Never mutate context; return new structures only.
-  - Consume On-hand inventory first; recurse into production steps for deficits using make recipes; respect integer batch size per tier.
-  - Calculate job fees on executed runs, divide fees between consumed outputs and excess outputs proportional to units produced.
-  - Excess outputs appear in `excess_to_inventory` with unit costs derived from allocated inputs + fee share (capitalized into inventory on application layer).
-  - Emit `trace` covering inputs, valuations, and recursion path for UI explainability.
+# Quality, Testing, and Ops Commitments
+- Maintain unit/integration coverage for all ISK-impacting math. Golden fixtures for costing, indicators, planner windows, and SPP⁺ are mandatory before marking tasks done.
+- Expand pytest suites to cover cache fallback paths, Redis outage tolerance, and Celery task idempotency (especially for price refresh and future indicator recompute).
+- Linting (`ruff`) and formatting (`black`) remain mandatory per constitution; CI should enforce these before merges.
+- Observability: extend `/metrics` after refactor to capture cache hit ratios, limiter saturation, and worker heartbeat counts so alerts can be defined.
 
-```python
-def spp_lead_time_aware(
-    depth_ahead_now: int,
-    dv_forecast_fn: Callable[[datetime], DepthForecast],
-    lead_time_days: Decimal,
-    horizon_days: Decimal,
-    price_best_now: Decimal,
-    drift_rate: Decimal,
-    price_policy: PricePolicy,
-    spread_at_list: Decimal,
-    vol_stdev_at_list: Decimal,
-) -> SPPResult:
-    """Pure forecast: project queue depth to listing time, adjust for drift, output SPP⁺ and diagnostics."""
-```
-- Steps: roll queue forward `lead_time_days`, adjust bid/ask via drift, apply demand depletion minus new listings estimate, compute probability-of-sale multipliers (PAM, LSM, VOLP).
-- Deterministic outputs for identical inputs; uses injected deterministic `dv_forecast_fn`.
-
-Indicator utilities:
-- `moving_average(series: Sequence[Decimal], window: int) -> Decimal`
-- `bollinger_bands(series, window, k) -> BollingerResult`
-- `shallow_depth_metrics(orderbook_slice) -> DepthSummary`
-- All functions pure; raise `ValueError` on insufficient data to enforce guardrails.
-
-Unit-testing commitments:
-- [ ] Golden-master fixtures for `cost_item` covering consume-only, recursion, excess capitalization edge cases.
-- [ ] Determinism tests with identical contexts to prove repeatability.
-- [ ] Boundary tests for SPP⁺ (zero depth, surge depth, negative drift bounded).
-
-# External Providers (adapters)
-```python
-class PriceProvider(Protocol):
-    def get(self, type_id: int, region_id: int) -> PriceQuote: ...
-
-class ESIClient(Protocol):
-    def list_industry_jobs(self, owner_scope: str) -> Sequence[ESIJob]: ...
-    def list_assets(self, owner_scope: str) -> Sequence[ESIAsset]: ...
-    def get_system_cost_indices(self, system_id: int) -> Sequence[CostIndex]: ...
-    def get_character_skills(self, char_id: int) -> ESISkills: ...
-```
-- Retry policy: exponential backoff (base 1.5s, max 5 attempts) with full jitter, circuit-breaker trips after 3 consecutive failures per provider per region.
-- Provider selection: Adam4EVE primary → Fuzzwork fallback; if both fail, serve last-good cached value with staleness flag.
-- Caching TTLs: prices 15m, indices 24h, skills/jobs respect ESI `Expires` header (persist metadata in Postgres).
-- Token handling: adapters require injected token storage service (encrypted secrets) and refresh automatically prior to expiry.
-
-Checklist:
-- [ ] Wrap adapters with metrics (latency, retries, last_success_ts).
-- [ ] Reject responses failing schema validation before entering math core.
-
-# API Surface (FastAPI)
-| Endpoint | Verb | Request | Response (200) | Notes |
-| --- | --- | --- | --- | --- |
-| `/state/ui` | GET | query: optional `owner_scope` | `{ "owner_scope": str, "last_sync": {...}, "widgets": {...} }` | Returns cached UI state; 200 w/ ETag; 401 if token invalid. |
-| `/sync/snapshot` | GET | none | `{ "prices": {"ts": iso8601, "stale": bool}, "indices": {...}, "esi_jobs": {...} }` | Triggers async refresh when stale; respond 202 with `Location` header when refresh queued. |
-| `/inventory/coverage` | GET | query: `owner_scope` | `{ "buckets": [{"location": "OnHand", "qty": Decimal, "days": Decimal}, ...], "valuation": {...} }` | Aggregates from `inventory_by_loc` + rolling average; supports pagination via `cursor` for large item sets. |
-| `/plan/next-window` | POST | `{ "start": iso8601, "duration_hours": int, "owner_scope": str }` | `{ "characters": [{"char_id": int, "recommended_jobs": [...]}], "assumptions": {...} }` | Runs math core scheduling; returns 422 on invalid window; 409 if reservations conflict. |
-| `/analytics/indicators` | GET | query: `type_id`, `region_id`, optional `window` | `{ "ma": Decimal, "bollinger": {...}, "volatility": {...} }` | Serve from Redis cache backed by Postgres; 429 when rate limit hit. |
-| `/analytics/spp_plus` | POST | `{ "type_id": int, "region_id": int, "lead_time_days": Decimal, "horizon_days": Decimal, "batch_options": [int] }` | `{ "spp": Decimal, "recommended_batch": int, "diagnostics": {...} }` | Deterministic math output; 400 if insufficient depth data; 503 when providers unavailable but no last-good cache. |
-
-Error envelope: `{"error": {"code": str, "message": str, "details": object}}`; include correlation `request_id` header.
-
-# Workers & Schedules
-| Task | Cadence | Executor | Idempotency & Notes |
-| --- | --- | --- | --- |
-| Price refresh per provider/region | Every 12 minutes staggered | Celery beat → Celery worker | Use provider priority queue, skip if cache younger than TTL, store last-good. |
-| System cost index refresh | Daily at 11:00 EVE | APScheduler → Celery | Pull ESI with cache headers, upsert snapshot. |
-| ESI jobs sync | On login event + every 30 minutes | Celery (per owner) | Compare `job_id` delta; idempotent via upsert + status transitions. |
-| ESI assets sync | Every 60 minutes or manual trigger | Celery | Respect ESI `pages`; dedupe via asset ID; update reservations. |
-| Indicator recompute | Hourly | Celery | Rebuild metrics from latest orderbook snapshots; publish to Redis. |
-| Discord alerts | Every 15 minutes | Celery | Send when profitability threshold breached or coverage < target; ensure once-per-hour per signal. |
-
-Checklist:
-- [ ] All schedules respect constitution’s polite cadence (no rate limit violations).
-- [ ] Worker tasks wrap DB ops in transactions and retry with backoff.
-
-# Caching & Performance
-- Redis keys: `price:{provider}:{region}:{type}` (TTL 900s), `index:{system}:{activity}` (TTL 86400s), `indicator:{region}:{type}` (TTL 3600s), `spp:{type}:{region}:{lead}:{horizon}:{batch_hash}` (TTL 1800s).
-- Use `SETEX` with atomic writes; track staleness metadata in Postgres for audit.
-- Cache-aside strategy with last-good fallback; API returns cached 200 within 150 ms P95; on cache miss, dispatch async refresh and serve 202 or last-good (≤100 ms).
-- Inventory mutations executed via Postgres transactions with `SELECT ... FOR UPDATE` on `inventory`/`inventory_by_loc` rows to guarantee exactly-once updates.
-- Profile math core to ensure pure functions execute in <25 ms per batch under median scenarios; memoize blueprint trees within request context only (no globals).
-
-## Rate Limits & Provider Guardrails
-- Central RateLimiter (token bucket) tracks calls per provider/endpoint with configurable capacity and refill rates per provider (e.g., ESI per-route, Adam4EVE polite 10s, Fuzzwork regional intervals).
-- Adapters call `RateLimiter.block_until_allowed(key)` before outbound requests; retry with exponential backoff and circuit breakers remain in place.
-- Emit basic counters per key: `allowed`, `denied`, `delayed`; expose via metrics endpoint later.
-- Configuration: env-driven defaults; tune per environment without code changes.
-
-## SDE Update Workflow (Dev-only)
-- SDE Manager (`python utils/manage_sde.py update --from-file path/to/sde.yaml`) parses only required subsets (T2 frigates/cruisers; reaction chains; relevant structures, rigs; system/region/constellation IDs) into compact JSON or inserts into Postgres.
-- Store artifacts under `data/sde/` (gitignored). Production images never bundle raw SDE; developers refresh locally when CCP publishes new drops.
-- Schema added for SDE subsets: `type_ids`, `blueprints`, `structures`, `cost_indices` for convenience joins; migrations are idempotent and versioned.
-
-# Security, Secrets, and Tokens
-- Store ESI refresh/access tokens encrypted (e.g., envelope encryption with KMS); rotate tokens every 30 days or on scope change.
-- Secrets injected via environment variables or secret manager; `.env` files excluded from VCS.
-- Enforce least-privilege ESI scopes: Industry jobs, Assets, Skills; no wallet scope stored.
-- Append immutable audit log entries on inventory changes and job status transitions with actor, request_id, timestamp.
-- Harden FastAPI with OAuth2 client credentials for UI/worker access; require HTTPS everywhere.
-
-# Environment & Tooling
-- Python virtual environment named `IndyCalculator`; configure VS Code interpreter to `.venv/IndyCalculator/bin/python`.
-- Core dependencies (requirements.txt pinned): FastAPI, Uvicorn[standard], SQLAlchemy, Alembic, Pydantic, Celery, APScheduler, Redis-py, Pandas, NumPy, statsmodels, scikit-learn (for basic regressions), httpx, tenacity, pytest, pytest-asyncio, coverage, black, ruff.
-- Frontend stack: React 18, Vite, TypeScript, TanStack Query, Tailwind (optional), recharts/d3 for visualizations.
-- Tooling checklist:
-  - [ ] `ruff` lint on pre-commit (constitution requirement).
-  - [ ] `black` formatting pipeline.
-  - [ ] Docker Compose for Postgres + Redis with named volumes.
-  - [ ] `.gitignore` excludes `IndyCalculator/`, `.env*`, `__pycache__/`.
-
-# Testing Strategy
-- [ ] Unit tests cover 100% of ISK-affecting formulas (costing, SPP⁺, indicators) with golden fixtures.
-- [ ] Determinism tests execute math core twice with identical inputs and assert stable outputs.
-- [ ] Contract tests for Adam4EVE/Fuzzwork adapters using recorded HTTP fixtures (pytest + vcr.py); include rate-limit handling cases.
-- [ ] API tests (pytest + httpx) for happy paths, validation errors (422), and provider outage fallbacks (503 with last-good data).
-- [ ] Integration tests via Docker Compose bring-up (Postgres, Redis) with seeded inventory/jobs to validate reservations and excess capitalization flows.
-- [ ] Load smoke: ensure price/index read paths stay <150 ms P95 using locust/k6 against cached scenarios.
-
-# Deployment & Ops
-- Containerize API, worker, and frontend; multi-stage Dockerfile with poetry/pip install inside `IndyCalculator` venv.
-- Compose file for local dev; production helm/k8s optional but container-ready for Fly.io/App Runner.
-- Config through environment variables; secrets supplied via platform secret manager.
-- Health endpoints: `/health/live`, `/health/ready`, `/health/startup`; workers expose Celery heartbeat metrics.
-- Target infra: API on Fly.io or AWS App Runner, Postgres on Neon or RDS, Redis on Upstash or Elasticache, frontend on Vercel/Netlify.
-- Observability: structured JSON logs with request_id, user_scope; metrics emitted to Prometheus-compatible endpoint (`/metrics`) for scraping; alerts on provider failure rate, queue backlog, cache hit ratio.
-
-# Risks & Mitigations
+# Risks & Mitigations (Updated)
 | Risk | Impact | Mitigation |
 | --- | --- | --- |
-| Provider downtime (Adam4EVE/Fuzzwork) | Stale pricing → bad recommendations | Cache last-good, fallback across providers, alert on staleness >30m. |
-| ESI rate limits / cache windows | Sync failures → inventory drift | Honor `Expires`, throttle per token, expose manual retry with backoff scheduler. |
-| Data drift from EVE SDE updates | Incorrect blueprint/cost data | Version blueprint refs, schedule SDE ingest job with migration script review. |
-| Math core regressions | Financial misstatements | Golden fixtures + determinism tests in CI; require code review from math owner. |
-| Queue overruns (Celery) | Delayed signals | Autoscale worker, prioritize critical queues, add circuit breaker on long tasks. |
+| Incomplete math fixtures allow regressions during refactor | High | Prioritize T-0047/T-0048/T-0082 to lock down deterministic tests before touching service boundaries. |
+| Redis/cache outages hiding stale data | Medium | Complete cache facade cleanup (T-0102) and ensure stale flags propagate to clients; document fallback behaviour. |
+| Provider rate-limit violations during worker runs | Medium | Strengthen rate limiter metrics and add integration tests that simulate throttling (T-0012). |
+| Planner/UI divergence | Medium | Ship typed contracts (T-0104) and automated contract tests linking backend outputs to frontend expectations. |
 
-# Milestones & Exit Criteria
-| Phase | Focus | Deliverables & Acceptance | Demo Scenario |
-| --- | --- | --- | --- |
-| MVP | Inventory & costing foundation, price cache, indicators, `/analytics/spp_plus`, basic React UI | ✓ Inventory CRUD with rolling averages; ✓ consume-only costing reflections; ✓ price cache & indicators API; ✓ deterministic SPP⁺ output; ✓ UI dashboard with coverage bars | Walk through acquiring ore, running job, showing cost trace and SPP⁺ batch recommendation aligning with specs. |
-| Phase 2 | Reservations/WIP, batch optimizer, alerting | ✓ Job reservation workflow from ESI sync; ✓ batch optimizer honoring integer constraints; ✓ Discord alerts for low coverage/profit swings | Demo multi-character plan window recommending balanced queues and sending alert on low Jita stock. |
-| Phase 3 | Advanced depth modeling, schedule-aware comparisons, corp-scale ops | ✓ Enhanced depth metrics in SPP⁺; ✓ schedule-aware comparisons across facilities; ✓ corp manager views with aggregation | Present corp-level dashboard comparing facility queues and updated SPP⁺ with depth sensitivity. |
-
-Exit checklist:
-- [ ] Definition of Done satisfied (tests, docs, migrations, perf budgets).
-- [ ] CHANGELOG.md updated per PR with perf note when hot paths touched.
-- [ ] Constitution Update Checklist executed before altering guardrails.
+# Alignment with Tasks.md
+- Backlog IDs referenced above correspond to `tasks.md` entries (T-0001–T-0083). Newly introduced refactor tasks T-0101–T-0104 should be appended to the backlog with dependencies noted below.
+- Task ordering remains valid: foundational schema and environment tasks precede analytics/planner/UI work; new refactor tasks depend on stabilization work already captured in the backlog.
+- Reviewed backlog remains consistent with this plan; no renumbering required. Update individual tasks with progress notes when determinism tests and contract coverage are added.
