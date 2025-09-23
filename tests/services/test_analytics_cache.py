@@ -32,3 +32,23 @@ def test_indicators_cache_fallback(monkeypatch) -> None:
     res2 = svc.indicators(type_id=34, region_id=10000002, window=5)
     assert str(res1.ma) == str(res2.ma)
 
+
+def test_spp_plus_batch_options_affect_recommendation(monkeypatch) -> None:
+    r = fakeredis.FakeRedis(decode_responses=True)
+    monkeypatch.setattr(svc, "_get_redis", lambda *_: r)
+    monkeypatch.setattr(svc, "_get_engine", lambda *_: None)
+
+    base_kwargs = {
+        "type_id": 603,
+        "region_id": 10000002,
+        "lead_time_days": Decimal("1"),
+        "horizon_days": Decimal("3"),
+    }
+
+    res_default = svc.spp_plus(batch_options=[1, 2, 3], **base_kwargs)
+    res_alt = svc.spp_plus(batch_options=[5, 10], **base_kwargs)
+
+    assert res_default["recommended_batch"] == 3
+    assert res_alt["recommended_batch"] == 10
+    assert res_default["recommended_batch"] != res_alt["recommended_batch"]
+

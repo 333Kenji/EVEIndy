@@ -31,5 +31,11 @@ def post_spp_plus(payload: dict[str, Any]):
         batch_options = [int(x) for x in payload.get("batch_options", [1, 2, 3])]
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Invalid payload") from exc
-    result = svc_spp_plus(type_id=type_id, region_id=region_id, lead_time_days=lead, horizon_days=horizon)
+    result = svc_spp_plus(
+        type_id=type_id,
+        region_id=region_id,
+        lead_time_days=lead,
+        horizon_days=horizon,
+        batch_options=batch_options,
+    )
     return result
