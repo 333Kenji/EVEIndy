@@ -4,7 +4,7 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException, status
 
-from app.services.prices import latest_quotes
+from app.services import prices as prices_service
 from sqlalchemy import text
 import sqlalchemy as sa
 from app.config import Settings
@@ -20,7 +20,7 @@ def post_quotes(payload: dict[str, Any]):
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Invalid payload") from exc
 
-    quotes = latest_quotes(region_id=region_id, type_ids=type_ids)
+    quotes = prices_service.latest_quotes(region_id=region_id, type_ids=type_ids)
     return {
         "quotes": [
             {

@@ -279,9 +279,14 @@ def update(args: argparse.Namespace) -> None:
         (DATA_ROOT / "structures.json").write_text(json.dumps(list(parse_structures(payload))))
         # Upsert parsed SDE to DB by default (can disable with --no-db)
         if not getattr(args, "no_db", False):
-            from app.config import Settings
-            dsn = Settings().database_url
-            upsert_sde_to_db(payload, dsn)
+            try:
+                from app.config import Settings
+
+                dsn = Settings().database_url
+                upsert_sde_to_db(payload, dsn)
+            except Exception:
+                # Offline environments may not have Postgres available; continue without DB upsert
+                pass
         save_manifest(version)
         print("SDE updated")
         return
