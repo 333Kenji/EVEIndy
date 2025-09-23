@@ -1,5 +1,6 @@
 import React from 'react'
 import PriceSparkline from '../components/PriceSparkline'
+import { loadUiState, patchUiState } from '../lib/uiState'
 
 type Product = { type_id: number; name: string }
 type TreeNode = { type_id: number; product_id: number; activity: string; materials: { type_id: number; qty: number }[]; children: TreeNode[] }
@@ -8,8 +9,6 @@ type QuoteMetrics = {
   ask: number
   mid: number
   spread: number
-  bid_qty: number
-  ask_qty: number
   depth_qty_1pct: number
   depth_qty_5pct: number
   ts: string
@@ -51,11 +50,10 @@ export default function ShipBasket() {
   const searchTimer = React.useRef<number | null>(null)
 
   React.useEffect(() => {
-    fetch('/state/ui')
-      .then(r => (r.ok ? r.json() : Promise.reject()))
+    loadUiState()
       .then((state) => {
-        const saved = state.shipBasket || {}
-        const savedBasket = saved.basket || state.basket || []
+        const saved = (state.shipBasket as { basket?: BasketItem[]; settings?: PlanSettings }) || {}
+        const savedBasket = saved.basket || []
         setBasket(savedBasket)
         setSettings({ ...DEFAULT_SETTINGS, ...(saved.settings || {}) })
       })
@@ -66,11 +64,7 @@ export default function ShipBasket() {
   }, [])
 
   const persist = React.useCallback((nextBasket: BasketItem[] = basket, nextSettings: PlanSettings = settings) => {
-    fetch('/state/ui', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ shipBasket: { basket: nextBasket, settings: nextSettings } }),
-    }).catch(() => {})
+    patchUiState({ shipBasket: { basket: nextBasket, settings: nextSettings } }).catch(() => {})
   }, [basket, settings])
 
   React.useEffect(() => {
@@ -113,20 +107,21 @@ export default function ShipBasket() {
       setBasket(prev => prev.map((item) => {
         if (item.product.type_id !== product.type_id) return item
         const totalCost = Number(costData?.total_cost || 0)
-        const grossSale = quote ? Number(quote.ask) * runs : undefined
+        const ask = quote ? Number(quote.ask) : undefined
+        const bid = quote ? Number(quote.bid) : undefined
+        const mid = quote ? Number(quote.mid) : undefined
+        const grossSale = ask !== undefined ? ask * runs : undefined
         const netSale = quote && grossSale !== undefined
           ? grossSale * (1 - settings.brokerFee - settings.salesTax)
           : undefined
         const profit = grossSale !== undefined && netSale !== undefined ? netSale - totalCost : undefined
         const metrics: QuoteMetrics | undefined = quote ? {
-          bid: Number(quote.bid),
-          ask: Number(quote.ask),
-          mid: Number(quote.mid),
-          spread: Number(quote.spread),
-          bid_qty: Number(quote.bid_qty),
-          ask_qty: Number(quote.ask_qty),
-          depth_qty_1pct: Number(quote.depth_qty_1pct),
-          depth_qty_5pct: Number(quote.depth_qty_5pct),
+          bid: bid ?? 0,
+          ask: ask ?? 0,
+          mid: mid ?? 0,
+          spread: (ask ?? 0) - (bid ?? 0),
+          depth_qty_1pct: Number(quote.depth_qty_1pct || 0),
+          depth_qty_5pct: Number(quote.depth_qty_5pct || 0),
           ts: quote.ts,
         } : undefined
         return {
@@ -365,4 +360,3 @@ function renderTree(node: TreeNode, depth = 0): JSX.Element {
     </div>
   )
 }
-

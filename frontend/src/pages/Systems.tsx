@@ -1,4 +1,5 @@
 import React from 'react'
+import { loadUiState, patchUiState } from '../lib/uiState'
 
 type System = {
   system_id: number
@@ -26,9 +27,8 @@ export default function Systems() {
   const [rigs, setRigs] = React.useState<Record<string, { rig_id: number; name: string }[]>>({})
 
   React.useEffect(() => {
-    fetch('/state/ui')
-      .then(r => (r.ok ? r.json() : Promise.reject()))
-      .then(state => setFacilities(state.facilities || { systems: [] }))
+    loadUiState()
+      .then(state => setFacilities((state.facilities as FacilitiesState) || { systems: [] }))
       .catch(() => setFacilities({ systems: [] }))
   }, [])
 
@@ -44,9 +44,9 @@ export default function Systems() {
 
   React.useEffect(() => { loadSystems() }, [loadSystems])
 
-  const persist = (next: FacilitiesState) => {
+  const persist = async (next: FacilitiesState) => {
     setFacilities(next)
-    fetch('/state/ui', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ facilities: next }) })
+    await patchUiState({ facilities: next })
   }
 
   const addSystem = (sys: System) => {
@@ -224,4 +224,3 @@ function AddStructureForm({ onAdd, loadRigs, rigs }: { onAdd: (cfg: StructureCfg
     </div>
   )
 }
-

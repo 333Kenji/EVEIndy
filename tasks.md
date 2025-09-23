@@ -327,6 +327,26 @@ Estimate: M
 Owner: (unset)
 Tags: [ui]
 
+- [ ] TASK: Sidebar Pane Launcher (id: T-0084)
+Why: Provide a persistent sidebar to open panes, with the selected pane occupying the main viewport.
+Deliverables: Left-side navigation component with buttons; when a pane is active it fills the primary content area (existing cards collapse beneath).
+Acceptance:
+  - Clicking a sidebar item opens the pane full-width within the current viewport; closing returns to the main layout; state persists via `/state/ui`.
+Depends on: T-0053
+Estimate: M
+Owner: (unset)
+Tags: [ui]
+
+- [ ] TASK: Production Facilities Entry in Sidebar (id: T-0085)
+Why: Move the Production Facilities (systems/structures) view into the new sidebar as the first menu option.
+Deliverables: Sidebar item labelled “Production Facilities” that activates the Systems pane/content; existing page card removed.
+Acceptance:
+  - Opening “Production Facilities” via sidebar shows systems/structures UI in the pane area; closing hides it; layout follows the new pane system.
+Depends on: T-0084, T-0064
+Estimate: S
+Owner: (unset)
+Tags: [ui]
+
 - [ ] TASK: Domain Panes (Structures, Analytics, Materials) (id: T-0054)
 Why: Surface detailed controls and insights.
 Deliverables: Three panes wired to existing endpoints and calculator state.

@@ -35,48 +35,35 @@ def upgrade() -> None:
     op.execute('CREATE EXTENSION IF NOT EXISTS "pgcrypto";')
     create_timestamp_trigger()
 
-    acquisition_source = sa.Enum(
-        "market",
-        "industry_excess",
-        "contract",
-        name="acquisition_source",
-    )
-    consumption_reason = sa.Enum(
-        "job_run",
-        "writeoff",
-        name="consumption_reason",
-    )
-    job_activity = sa.Enum(
-        "manufacturing",
-        "reaction",
-        "invention",
-        "research",
-        name="job_activity",
-    )
-    job_status = sa.Enum(
-        "queued",
-        "active",
-        "delivered",
-        "cancelled",
-        name="job_status",
-    )
-    buy_order_status = sa.Enum(
-        "open",
-        "filled",
-        "cancelled",
-        name="buy_order_status",
-    )
-    order_side = sa.Enum("bid", "ask", name="order_side")
+    enum_defs = {
+        "acquisition_source": ("market", "industry_excess", "contract"),
+        "consumption_reason": ("job_run", "writeoff"),
+        "job_activity": ("manufacturing", "reaction", "invention", "research"),
+        "job_status": ("queued", "active", "delivered", "cancelled"),
+        "buy_order_status": ("open", "filled", "cancelled"),
+        "order_side": ("bid", "ask"),
+    }
 
-    for enum in (
-        acquisition_source,
-        consumption_reason,
-        job_activity,
-        job_status,
-        buy_order_status,
-        order_side,
-    ):
-        enum.create(op.get_bind(), checkfirst=True)
+    for name, values in enum_defs.items():
+        literals = ",".join(f"'{v}'" for v in values)
+        op.execute(
+            f"""
+            DO $$
+            BEGIN
+                IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = '{name}') THEN
+                    CREATE TYPE {name} AS ENUM ({literals});
+                END IF;
+            END;
+            $$;
+            """
+        )
+
+    acquisition_source = sa.Enum(*enum_defs["acquisition_source"], name="acquisition_source", create_type=False)
+    consumption_reason = sa.Enum(*enum_defs["consumption_reason"], name="consumption_reason", create_type=False)
+    job_activity = sa.Enum(*enum_defs["job_activity"], name="job_activity", create_type=False)
+    job_status = sa.Enum(*enum_defs["job_status"], name="job_status", create_type=False)
+    buy_order_status = sa.Enum(*enum_defs["buy_order_status"], name="buy_order_status", create_type=False)
+    order_side = sa.Enum(*enum_defs["order_side"], name="order_side", create_type=False)
 
     op.create_table(
         "inventory",

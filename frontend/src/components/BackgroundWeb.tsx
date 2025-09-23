@@ -75,5 +75,12 @@ export default function BackgroundWeb({
     return () => { window.removeEventListener('resize', onResize); document.removeEventListener('visibilitychange', onVis); if (raf.current) cancelAnimationFrame(raf.current) }
   }, [])
 
-  return <canvas ref={ref} style={{ position: 'fixed', inset: 0, zIndex: 0, opacity: 0.5, pointerEvents: 'none' }} />
+  return <canvas
+    ref={ref}
+    data-density={density}
+    data-velocity={velocity}
+    data-filament={filamentAmplitude}
+    data-gradient={gradient.stops.join(',')}
+    style={{ position: 'fixed', inset: 0, zIndex: 0, opacity: 0.5, pointerEvents: 'none' }}
+  />
 }
