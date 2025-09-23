@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from decimal import Decimal
+import hashlib
 from typing import Any, Mapping, Sequence
 
 import redis
@@ -137,11 +138,14 @@ def spp_plus(
     region_id: int,
     lead_time_days: Decimal,
     horizon_days: Decimal,
+    batch_options: Sequence[int] | None = None,
 ) -> dict:
     settings = Settings()
     cache = _safe_cache()
+    batch_options_seq = tuple(int(opt) for opt in (batch_options or (1, 2, 3)))
+    batch_hash = hashlib.sha256(",".join(map(str, batch_options_seq)).encode()).hexdigest()
     # Key params hash (simple)
-    key_hash = f"{type_id}:{region_id}:{lead_time_days}:{horizon_days}"
+    key_hash = f"{type_id}:{region_id}:{lead_time_days}:{horizon_days}:{batch_hash}"
     cached = None
     if cache is not None:
         try:
@@ -177,7 +181,7 @@ def spp_plus(
         price_policy=PricePolicy(listing_markup=Decimal("0.02"), minimum_spread=Decimal("0.03")),
         spread_at_list=Decimal("0.03"),
         vol_stdev_at_list=Decimal("0.05"),
-        batch_options=[1, 2, 3],
+        batch_options=batch_options_seq,
     )
     out = {"spp": str(result.spp), "recommended_batch": result.recommended_batch, "diagnostics": result.diagnostics.__dict__}
     if cache is not None:
