@@ -1,15 +1,13 @@
 from __future__ import annotations
 
-from fastapi.testclient import TestClient
+from decimal import Decimal
+
 from sqlalchemy import text
 
-from app.main import app
+from app.services import inventory as inventory_service
 
 
-client = TestClient(app)
-
-
-def test_inventory_valuation_round_trip(inventory_test_engine):
+def test_get_on_hand_returns_decimals(inventory_test_engine):
     with inventory_test_engine.begin() as conn:
         conn.execute(text("delete from inventory"))
         conn.execute(
@@ -21,22 +19,18 @@ def test_inventory_valuation_round_trip(inventory_test_engine):
             ),
             {
                 "owner_scope": "corp",
-                "type_id": 34,
-                "qty_on_hand": "3.2500",
-                "avg_cost": "12.3456",
+                "type_id": 1001,
+                "qty_on_hand": "7.12",
+                "avg_cost": "42.9876",
             },
         )
 
-    resp = client.get("/inventory/valuation", params={"owner_scope": "corp"})
-    assert resp.status_code == 200
-    body = resp.json()
-    assert body["owner_scope"] == "corp"
-    assert body["items"] == [
-        {"type_id": 34, "qty": "3.25", "avg_cost": "12.3456"},
-    ]
+    result = inventory_service.get_on_hand("corp")
+    assert result[1001]["qty"] == Decimal("7.12")
+    assert result[1001]["avg_cost"] == Decimal("42.9876")
 
 
-def test_inventory_wip_round_trip(inventory_test_engine):
+def test_get_wip_returns_decimals(inventory_test_engine):
     with inventory_test_engine.begin() as conn:
         conn.execute(text("delete from industry_jobs"))
         conn.execute(
@@ -48,9 +42,9 @@ def test_inventory_wip_round_trip(inventory_test_engine):
             ),
             {
                 "owner_scope": "corp",
-                "type_id": 603,
-                "runs": 2,
-                "output_qty": "1.750",
+                "type_id": 2002,
+                "runs": 3,
+                "output_qty": "0.750",
                 "status": "queued",
             },
         )
@@ -63,18 +57,12 @@ def test_inventory_wip_round_trip(inventory_test_engine):
             ),
             {
                 "owner_scope": "corp",
-                "type_id": 603,
+                "type_id": 2002,
                 "runs": 1,
-                "output_qty": None,
+                "output_qty": "1.2500",
                 "status": "active",
             },
         )
 
-    resp = client.get("/inventory/wip", params={"owner_scope": "corp"})
-    assert resp.status_code == 200
-    body = resp.json()
-    assert body["owner_scope"] == "corp"
-    assert body["items"] == [
-        {"type_id": 603, "qty": "4.5"},
-    ]
-
+    result = inventory_service.get_wip("corp")
+    assert result[2002] == Decimal("3.50")

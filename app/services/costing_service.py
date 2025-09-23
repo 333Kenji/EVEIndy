@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from decimal import Decimal
 from math import ceil
-from typing import Dict, List, Tuple
+from typing import List, Tuple
 
 import sqlalchemy as sa
 from sqlalchemy import text
@@ -16,7 +17,15 @@ def _engine():
     return sa.create_engine(Settings().database_url)
 
 
-def _latest_mid(conn, region_id: int, type_id: int):
+def _to_decimal(value: object) -> Decimal | None:
+    if value is None:
+        return None
+    if isinstance(value, Decimal):
+        return value
+    return Decimal(str(value))
+
+
+def _latest_mid(conn, region_id: int, type_id: int) -> Decimal | None:
     row = conn.execute(
         text(
             """
@@ -37,15 +46,19 @@ def _latest_mid(conn, region_id: int, type_id: int):
     bid, ask = row
     if bid is None or ask is None:
         return None
-    return (bid + ask) / 2
+    bid_dec = _to_decimal(bid)
+    ask_dec = _to_decimal(ask)
+    if bid_dec is None or ask_dec is None:
+        return None
+    return (bid_dec + ask_dec) / Decimal(2)
 
 
 @dataclass
 class CostLine:
     type_id: int
     qty: int
-    unit_price: float
-    cost: float
+    unit_price: Decimal
+    cost: Decimal
 
 
 @dataclass
@@ -53,7 +66,7 @@ class CostSummary:
     product_id: int
     runs: int
     lines: List[CostLine]
-    total_cost: float
+    total_cost: Decimal
 
 
 def cost_product(product_id: int, *, region_id: int, runs: int = 1, me_bonus: float = 0.0, owner_scope: str | None = None) -> CostSummary | None:
@@ -77,28 +90,51 @@ def cost_product(product_id: int, *, region_id: int, runs: int = 1, me_bonus: fl
     # Preload on-hand valuation if owner_scope provided (policy: RA for holdings; spot for shortfalls)
     on_hand = get_on_hand(owner_scope, None) if owner_scope else {}
 
-    def cost_material(conn, t_id: int, qty_needed: int, depth: int = 0, max_depth: int = 4) -> Tuple[float, List[CostLine]]:
+    def cost_material(
+        conn,
+        t_id: int,
+        qty_needed: int,
+        depth: int = 0,
+        max_depth: int = 4,
+    ) -> Tuple[Decimal, List[CostLine]]:
         bp = _blueprint_for_product(conn, t_id)
         if not bp or depth >= max_depth:
             # Apply policy: use RA for on-hand upto available; price only deficits via spot
-            total_cost = 0.0
+            total_cost = Decimal("0")
             lines: List[CostLine] = []
             remaining = qty_needed
             if owner_scope and t_id in on_hand and on_hand[t_id]["qty"] > 0:
-                avail = int(on_hand[t_id]["qty"])
+                available_qty = on_hand[t_id]["qty"]
+                avail = int(available_qty)
                 use = min(avail, remaining)
                 if use > 0:
                     ra = on_hand[t_id]["avg_cost"]
-                    total_cost += ra * use
-                    lines.append(CostLine(type_id=t_id, qty=use, unit_price=float(ra), cost=float(ra) * use))
+                    use_dec = Decimal(use)
+                    total_cost += ra * use_dec
+                    lines.append(
+                        CostLine(
+                            type_id=t_id,
+                            qty=use,
+                            unit_price=ra,
+                            cost=ra * use_dec,
+                        )
+                    )
                     remaining -= use
-                    on_hand[t_id]["qty"] = avail - use  # reduce available for subsequent calls
+                    on_hand[t_id]["qty"] = available_qty - use_dec  # reduce available for subsequent calls
             if remaining > 0:
-                price = float(_latest_mid(conn, region_id, t_id) or 0)
-                total_cost += price * remaining
-                lines.append(CostLine(type_id=t_id, qty=remaining, unit_price=price, cost=price * remaining))
+                price = _latest_mid(conn, region_id, t_id) or Decimal("0")
+                remaining_dec = Decimal(remaining)
+                total_cost += price * remaining_dec
+                lines.append(
+                    CostLine(
+                        type_id=t_id,
+                        qty=remaining,
+                        unit_price=price,
+                        cost=price * remaining_dec,
+                    )
+                )
             return total_cost, lines
-        subtotal = 0.0
+        subtotal = Decimal("0")
         out_lines: List[CostLine] = []
         # Calculate required runs using output quantity
         output_qty = int(bp.get("output_qty") or 1)
@@ -113,7 +149,7 @@ def cost_product(product_id: int, *, region_id: int, runs: int = 1, me_bonus: fl
         return subtotal, out_lines
 
     with engine.connect() as conn:
-        total_cost = 0.0
+        total_cost = Decimal("0")
         for m in tree.materials:
             mid = int(m.get("type_id"))
             qty_per_run = int(m.get("qty") or m.get("quantity") or 0)
@@ -121,5 +157,5 @@ def cost_product(product_id: int, *, region_id: int, runs: int = 1, me_bonus: fl
             c, ls = cost_material(conn, mid, adj * runs)
             total_cost += c
             lines.extend(ls)
-    total = sum(l.cost for l in lines)
+    total = sum((l.cost for l in lines), Decimal("0"))
     return CostSummary(product_id=product_id, runs=runs, lines=lines, total_cost=total)
