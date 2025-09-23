@@ -8,6 +8,12 @@ from sqlalchemy import text
 from app.db import get_engine
 
 
+def _engine():
+    """Return the shared engine (compatibility helper for tests)."""
+
+    return get_engine()
+
+
 router = APIRouter(prefix="/structures", tags=["structures"])
 FALLBACK_RIGS = [
     {"rig_id": 1001, "name": "Manufacturing Material Efficiency I", "activity": "Manufacturing", "me_bonus": 0.02, "te_bonus": 0.0},

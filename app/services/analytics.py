@@ -14,6 +14,12 @@ from app.math import BollingerBands, DepthPoint, DepthSummary, bollinger_bands, 
 from app.db import get_engine
 
 
+def _get_engine():
+    """Return the shared engine (compatibility helper for tests)."""
+
+    return get_engine()
+
+
 @dataclass(frozen=True)
 class IndicatorResult:
     ma: Decimal
@@ -93,7 +99,7 @@ def indicators(type_id: int, region_id: int, window: int) -> IndicatorResult:
         )
 
     try:
-        engine = get_engine()
+        engine = _get_engine()
         with engine.connect() as conn:
             series = _fetch_price_series(conn, region_id, type_id, max(5, window))
     except Exception:
@@ -147,7 +153,7 @@ def spp_plus(
 
     series: list[Decimal] = []
     try:
-        engine = get_engine()
+        engine = _get_engine()
         with engine.connect() as conn:
             series = _fetch_price_series(conn, region_id, type_id, 14)
     except Exception:
