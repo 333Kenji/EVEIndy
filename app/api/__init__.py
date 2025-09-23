@@ -10,6 +10,7 @@ from .routes.ui_state import router as ui_router
 from .routes.systems import router as systems_router
 from .routes.structures import router as structures_router
 from .routes.inventory import router as inventory_router
+from .routes.market import router as market_router
 
 router = APIRouter()
 router.include_router(analytics_router)
@@ -21,5 +22,6 @@ router.include_router(ui_router)
 router.include_router(systems_router)
 router.include_router(structures_router)
 router.include_router(inventory_router)
+router.include_router(market_router)
 
 __all__ = ["router"]

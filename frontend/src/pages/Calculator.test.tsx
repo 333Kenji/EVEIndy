@@ -6,7 +6,7 @@ import Calculator from './Calculator'
 describe('Calculator', () => {
   it('updates totals when runs change', () => {
     render(<Calculator />)
-    const totalBefore = screen.getByText(/Total/).nextSibling as HTMLElement | null
+    const totalBefore = screen.getAllByText(/^Total$/)[0]?.nextElementSibling as HTMLElement | null
     const input = screen.getByLabelText(/Runs:/) as HTMLInputElement
     fireEvent.change(input, { target: { value: '2' } })
     expect(input.value).toBe('2')
@@ -18,11 +18,11 @@ describe('Calculator', () => {
   it('toggles ME rig changes quantities', () => {
     render(<Calculator />)
     // Find one material row (Heavy Water) and capture qty
-    const row = screen.getByText('Heavy Water').closest('tr')!
+    const row = screen.getAllByText('Heavy Water')[0]?.closest('tr')!
     const qtyCell = row?.children[1] as HTMLElement
     const before = qtyCell.textContent
     // Uncheck ME Rig I
-    const rigCheckbox = screen.getByLabelText(/ME Rig I/i) as HTMLInputElement
+    const rigCheckbox = screen.getAllByLabelText(/ME Rig I/i)[0] as HTMLInputElement
     if (rigCheckbox.checked) {
       rigCheckbox.click()
     } else {
