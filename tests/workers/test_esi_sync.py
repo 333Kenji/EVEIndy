@@ -56,6 +56,7 @@ def test_sync_industry_jobs_idempotent_paths() -> None:
             job_id=1,
             blueprint_type_id=603,
             runs=2,
+            activity_id=1,
             status="active",
             start_date=datetime(2024, 4, 1, tzinfo=timezone.utc),
             end_date=None,
@@ -66,6 +67,7 @@ def test_sync_industry_jobs_idempotent_paths() -> None:
             job_id=2,
             blueprint_type_id=603,
             runs=1,
+            activity_id=8,
             status="delivered",
             start_date=datetime(2024, 4, 1, tzinfo=timezone.utc),
             end_date=datetime(2024, 4, 1, 12, tzinfo=timezone.utc),
@@ -85,4 +87,6 @@ def test_sync_industry_jobs_idempotent_paths() -> None:
     assert set(irepo.settled) == {2}
     # Upserts called with two jobs
     assert len(jrepo.upserts) == 2
+    activities = {job.job_id: job.activity for job in jrepo.upserts}
+    assert activities == {1: "manufacturing", 2: "reaction"}
 

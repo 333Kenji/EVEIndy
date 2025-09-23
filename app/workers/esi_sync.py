@@ -14,13 +14,31 @@ from app.providers.esi import ESIClient, IndustryJob
 from app.repos import InventoryRepo, Job, JobsRepo
 
 
+_ACTIVITY_MAP = {
+    1: "manufacturing",
+    2: "research",
+    3: "research",
+    4: "research",
+    5: "research",
+    8: "reaction",
+    11: "invention",
+}
+
+
+def _translate_activity(activity_id: int) -> str:
+    try:
+        return _ACTIVITY_MAP[activity_id]
+    except KeyError as exc:  # pragma: no cover - guardrail for unexpected IDs
+        raise ValueError(f"Unsupported industry activity_id: {activity_id}") from exc
+
+
 def _map_job(owner_scope: str, src: IndustryJob) -> Job:
     return Job(
         job_id=src.job_id,
         owner_scope=owner_scope,
         char_id=src.installer_id,
         type_id=src.blueprint_type_id,
-        activity=src.status,  # Note: in real impl, map ESI activity separately
+        activity=_translate_activity(src.activity_id),
         runs=src.runs,
         start_time=src.start_date,
         end_time=src.end_date,

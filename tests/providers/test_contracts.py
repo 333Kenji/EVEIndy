@@ -106,6 +106,7 @@ def test_esi_client_parses_headers_and_payloads() -> None:
             "job_id": 1,
             "blueprint_type_id": 603,
             "runs": 2,
+            "activity_id": 1,
             "status": "active",
             "start_date": "2024-04-01T00:00:00Z",
             "end_date": "2024-04-01T12:00:00Z",
