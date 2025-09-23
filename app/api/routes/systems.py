@@ -8,6 +8,18 @@ router = APIRouter(prefix="/systems", tags=["systems"])
 
 
 @router.get("")
-def systems_index(q: str | None = Query(default=None), limit: int = Query(default=50, ge=1, le=200), cursor: int | None = Query(default=None)):
-    return systems_service.list_systems(q=q, limit=limit, cursor=cursor)
+def systems_index(
+    q: str | None = Query(default=None),
+    limit: int = Query(default=50, ge=1, le=200),
+    cursor: int | None = Query(default=None),
+    region_id: int | None = Query(default=None),
+    constellation_id: int | None = Query(default=None),
+):
+    return systems_service.list_systems(
+        q=q,
+        limit=limit,
+        cursor=cursor,
+        region_id=region_id,
+        constellation_id=constellation_id,
+    )
 

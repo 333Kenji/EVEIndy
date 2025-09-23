@@ -47,6 +47,8 @@ def test_load_local_parses_and_calls_upsert(tmp_path, monkeypatch):
     monkeypatch.setattr(cfg, "Settings", lambda: type("S", (), {"database_url": "postgresql+psycopg2://test"})())
 
     sde.load_local(Args())
-    assert called["upsert"] == 1
+    # Second pass should remain idempotent (no duplicate work beyond normal SQL upserts)
+    sde.load_local(Args())
+    assert called["upsert"] == 2
     assert called["exec"] > 0
 
