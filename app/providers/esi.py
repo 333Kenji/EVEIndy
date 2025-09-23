@@ -88,7 +88,9 @@ class ESIClient:
 
     def get_character_skills(self, character_id: int) -> ESIResponse[CharacterSkills]:
         data, expires = self._request(f"/skills/{character_id}")
-        payload = CharacterSkills.model_validate(data)
+        if not data:
+            return ESIResponse(data=[], expires=expires)
+        payload = CharacterSkills.model_validate(data[0])
         return ESIResponse(data=[payload], expires=expires)
 
     def _auth_header(self) -> Mapping[str, str]:

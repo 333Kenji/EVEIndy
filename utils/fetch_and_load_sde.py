@@ -22,6 +22,7 @@ Notes:
 from __future__ import annotations
 
 import argparse
+import contextlib
 import bz2
 import os
 import re
@@ -103,14 +104,34 @@ def _download_with_retry(url: str, dest: Path, client: Optional[httpx.Client] = 
         headers["Range"] = f"bytes={tmp.stat().st_size}-"
 
     def _do() -> None:
-        with c.stream("GET", url, headers=headers) as r:
-            r.raise_for_status()
-            mode = "ab" if "Range" in headers else "wb"
-            with tmp.open(mode) as f:
-                for chunk in r.iter_bytes():
-                    if chunk:
-                        f.write(chunk)
-        tmp.rename(dest)
+        parsed = httpx.URL(url)
+        candidates = [parsed]
+        if parsed.query:
+            candidates.append(parsed.copy_with(query=None))
+        last_error: Exception | None = None
+        for candidate in candidates:
+            url_str = str(candidate)
+            try:
+                response = c.stream("GET", url_str, headers=headers)
+                if hasattr(response, "__enter__"):
+                    ctx = response
+                else:
+                    ctx = contextlib.nullcontext(response)
+                with ctx as r:
+                    r.raise_for_status()
+                    mode = "ab" if "Range" in headers else "wb"
+                    with tmp.open(mode) as f:
+                        for chunk in r.iter_bytes():
+                            if chunk:
+                                f.write(chunk)
+                tmp.rename(dest)
+                return
+            except Exception as exc:  # noqa: BLE001
+                last_error = exc
+                if tmp.exists():
+                    tmp.unlink()
+        if last_error:
+            raise last_error
 
     retry = Retrying(stop=stop_after_attempt(5), wait=wait_random_exponential(min=1, max=10), reraise=True)
     for attempt in retry:
@@ -146,6 +167,12 @@ def _write_manifest(dir_: Path, version: str, type_path: Path, bp_path: Path) ->
     (dir_ / "manifest.json").write_text(json.dumps(manifest, indent=2))
 
 
+def _filename_from_url(url: str) -> str:
+    parsed = httpx.URL(url)
+    name = Path(parsed.path).name
+    return name or "download"
+
+
 def fetch_and_load(version: Optional[str] = None, out_dir: Optional[Path] = None, no_db: bool = False, force: bool = False, base_url: str = CCP_STATIC_DATA_URL, sha_types: Optional[str] = None, sha_blueprints: Optional[str] = None) -> str:
     out = out_dir or Path("data/sde/_downloads")
     out.mkdir(parents=True, exist_ok=True)
@@ -154,8 +181,8 @@ def fetch_and_load(version: Optional[str] = None, out_dir: Optional[Path] = None
     if version:
         assets = SDEAssets(typeids_url=assets.typeids_url, blueprints_url=assets.blueprints_url, version=version)
     # Download
-    type_path = _download_with_retry(assets.typeids_url, out / Path(assets.typeids_url).name, client, force)
-    bp_path = _download_with_retry(assets.blueprints_url, out / Path(assets.blueprints_url).name, client, force)
+    type_path = _download_with_retry(assets.typeids_url, out / _filename_from_url(assets.typeids_url), client, force)
+    bp_path = _download_with_retry(assets.blueprints_url, out / _filename_from_url(assets.blueprints_url), client, force)
     # Decompress if needed
     type_yaml = _maybe_decompress(type_path)
     bp_yaml = _maybe_decompress(bp_path)

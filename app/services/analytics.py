@@ -2,14 +2,15 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from decimal import Decimal
-from typing import Sequence
+from typing import Any, Mapping, Sequence
 
 import redis
+from redis.exceptions import RedisError
 import sqlalchemy as sa
 from sqlalchemy import text
 
 from app.config import Settings
-from app.cache import CacheClient, CachePolicy
+from app.cache import CacheClient, CacheRecord
 from app.math import BollingerBands, DepthPoint, DepthSummary, bollinger_bands, moving_average, shallow_depth_metrics, simple_volatility, spp_lead_time_aware, PricePolicy
 
 
@@ -46,12 +47,40 @@ def _fetch_price_series(conn, region_id: int, type_id: int, limit: int) -> Seque
     return [Decimal(str(r[0])) for r in reversed(rows)]
 
 
+def _safe_cache() -> CacheClient | None:
+    settings = Settings()
+    try:
+        rc = _get_redis(settings)
+    except RedisError:
+        return None
+    except OSError:
+        return None
+    return CacheClient(rc)
+
+
+def _cache_get_indicator(cache: CacheClient | None, region_id: int, type_id: int) -> CacheRecord | None:
+    if cache is None:
+        return None
+    try:
+        return cache.get_indicator(region_id, type_id)
+    except (RedisError, OSError):
+        return None
+
+
+def _cache_set_indicator(cache: CacheClient | None, region_id: int, type_id: int, payload: Mapping[str, Any]) -> None:
+    if cache is None:
+        return
+    try:
+        cache.set_indicator(region_id, type_id, payload)
+    except (RedisError, OSError):
+        return
+
+
 def indicators(type_id: int, region_id: int, window: int) -> IndicatorResult:
     settings = Settings()
-    rc = _get_redis(settings)
-    cache = CacheClient(rc)
+    cache = _safe_cache()
     # Try cache first
-    cached = cache.get_indicator(region_id, type_id)
+    cached = _cache_get_indicator(cache, region_id, type_id)
     if cached and not cached.stale:
         v = cached.value
         return IndicatorResult(
@@ -86,7 +115,8 @@ def indicators(type_id: int, region_id: int, window: int) -> IndicatorResult:
         [DepthPoint(price=series[-1], quantity=Decimal("10")), DepthPoint(price=series[-1] * Decimal("1.005"), quantity=Decimal("5"))]
     )
     # Write to cache
-    cache.set_indicator(
+    _cache_set_indicator(
+        cache,
         region_id,
         type_id,
         {
@@ -109,11 +139,15 @@ def spp_plus(
     horizon_days: Decimal,
 ) -> dict:
     settings = Settings()
-    rc = _get_redis(settings)
-    cache = CacheClient(rc)
+    cache = _safe_cache()
     # Key params hash (simple)
     key_hash = f"{type_id}:{region_id}:{lead_time_days}:{horizon_days}"
-    cached = cache.get_spp(type_id, region_id, key_hash)
+    cached = None
+    if cache is not None:
+        try:
+            cached = cache.get_spp(type_id, region_id, key_hash)
+        except (RedisError, OSError):
+            cached = None
     if cached and not cached.stale:
         return cached.value  # already JSON-serializable strings
 
@@ -146,5 +180,9 @@ def spp_plus(
         batch_options=[1, 2, 3],
     )
     out = {"spp": str(result.spp), "recommended_batch": result.recommended_batch, "diagnostics": result.diagnostics.__dict__}
-    cache.set_spp(type_id, region_id, key_hash, out)
+    if cache is not None:
+        try:
+            cache.set_spp(type_id, region_id, key_hash, out)
+        except (RedisError, OSError):
+            pass
     return out
