@@ -6,12 +6,12 @@ from typing import Any, Mapping, Sequence
 
 import redis
 from redis.exceptions import RedisError
-import sqlalchemy as sa
 from sqlalchemy import text
 
 from app.config import Settings
 from app.cache import CacheClient, CacheRecord
 from app.math import BollingerBands, DepthPoint, DepthSummary, bollinger_bands, moving_average, shallow_depth_metrics, simple_volatility, spp_lead_time_aware, PricePolicy
+from app.db import get_engine
 
 
 @dataclass(frozen=True)
@@ -20,10 +20,6 @@ class IndicatorResult:
     bollinger: BollingerBands
     volatility: Decimal
     depth: DepthSummary
-
-
-def _get_engine(settings: Settings) -> sa.Engine:
-    return sa.create_engine(settings.database_url)
 
 
 def _get_redis(settings: Settings) -> redis.Redis:
@@ -77,7 +73,6 @@ def _cache_set_indicator(cache: CacheClient | None, region_id: int, type_id: int
 
 
 def indicators(type_id: int, region_id: int, window: int) -> IndicatorResult:
-    settings = Settings()
     cache = _safe_cache()
     # Try cache first
     cached = _cache_get_indicator(cache, region_id, type_id)
@@ -98,7 +93,7 @@ def indicators(type_id: int, region_id: int, window: int) -> IndicatorResult:
         )
 
     try:
-        engine = _get_engine(settings)
+        engine = get_engine()
         with engine.connect() as conn:
             series = _fetch_price_series(conn, region_id, type_id, max(5, window))
     except Exception:
@@ -138,7 +133,6 @@ def spp_plus(
     lead_time_days: Decimal,
     horizon_days: Decimal,
 ) -> dict:
-    settings = Settings()
     cache = _safe_cache()
     # Key params hash (simple)
     key_hash = f"{type_id}:{region_id}:{lead_time_days}:{horizon_days}"
@@ -153,7 +147,7 @@ def spp_plus(
 
     series: list[Decimal] = []
     try:
-        engine = _get_engine(settings)
+        engine = get_engine()
         with engine.connect() as conn:
             series = _fetch_price_series(conn, region_id, type_id, 14)
     except Exception:

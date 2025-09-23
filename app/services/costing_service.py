@@ -4,16 +4,11 @@ from dataclasses import dataclass
 from math import ceil
 from typing import Dict, List, Tuple
 
-import sqlalchemy as sa
 from sqlalchemy import text
 
-from app.config import Settings
+from app.db import get_engine
 from app.services.bom import build_bom_tree
 from app.services.inventory import get_on_hand
-
-
-def _engine():
-    return sa.create_engine(Settings().database_url)
 
 
 def _latest_mid(conn, region_id: int, type_id: int):
@@ -66,7 +61,7 @@ def cost_product(product_id: int, *, region_id: int, runs: int = 1, me_bonus: fl
     if not tree:
         return None
     me = max(0.0, min(0.5, me_bonus))
-    engine = _engine()
+    engine = get_engine()
     lines: List[CostLine] = []
     def _blueprint_for_product(conn, pid: int):
         row = conn.execute(text("select type_id, product_id, activity, materials, coalesce(output_qty,1) from blueprints where product_id=:p limit 1"), {"p": pid}).fetchone()

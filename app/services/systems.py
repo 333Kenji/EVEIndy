@@ -1,17 +1,13 @@
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
-import sqlalchemy as sa
+import redis
 from sqlalchemy import text
 
 from app.cache import CacheClient
 from app.config import Settings
-import redis
-
-
-def _engine():
-    return sa.create_engine(Settings().database_url)
+from app.db import get_engine
 
 
 def _redis():
@@ -77,7 +73,7 @@ def list_systems(
     }
     rows = []
     out: Dict[int, Dict[str, Any]] = {}
-    with _engine().connect() as conn:
+    with get_engine().connect() as conn:
         rows = conn.execute(sql, params).fetchall()
     for system_id, name, const_id, const_name, reg_id, reg_name, activity, index_value in rows:
         d = out.setdefault(

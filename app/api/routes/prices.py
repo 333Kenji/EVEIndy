@@ -3,11 +3,10 @@ from __future__ import annotations
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, status
-
-from app.services import prices as prices_service
 from sqlalchemy import text
-import sqlalchemy as sa
-from app.config import Settings
+
+from app.db import get_engine
+from app.services import prices as prices_service
 
 router = APIRouter(prefix="/prices", tags=["prices"])
 
@@ -44,7 +43,6 @@ def post_quotes(payload: dict[str, Any]):
 
 @router.get("/history")
 def get_history(type_id: int, region_id: int, days: int = 7):
-    engine = sa.create_engine(Settings().database_url)
     sql = text(
         """
         with latest as (
@@ -61,7 +59,7 @@ def get_history(type_id: int, region_id: int, days: int = 7):
         """
     )
     rows = []
-    with engine.connect() as conn:
+    with get_engine().connect() as conn:
         rows = conn.execute(sql, {"t": type_id, "r": region_id, "d": days}).fetchall()
     return {
         "points": [

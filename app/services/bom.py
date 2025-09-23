@@ -1,12 +1,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, List
+from typing import List
 
-import sqlalchemy as sa
 from sqlalchemy import text
 
-from app.config import Settings
+from app.db import get_engine
 
 
 @dataclass
@@ -18,26 +17,25 @@ class BOMNode:
     children: List["BOMNode"]
 
 
-def _engine():
-    return sa.create_engine(Settings().database_url)
-
-
 def search_products(query: str, limit: int = 20) -> List[dict]:
     sql = text("select type_id, name from type_ids where lower(name) like :q order by name limit :lim")
-    with _engine().connect() as conn:
+    with get_engine().connect() as conn:
         rows = conn.execute(sql, {"q": f"%{query.lower()}%", "lim": limit}).fetchall()
     return [{"type_id": int(r[0]), "name": r[1]} for r in rows]
 
 
 def _blueprint_for_product(conn, product_id: int) -> dict | None:
-    row = conn.execute(text("select type_id, product_id, activity, materials from blueprints where product_id=:p limit 1"), {"p": product_id}).fetchone()
+    row = conn.execute(
+        text("select type_id, product_id, activity, materials from blueprints where product_id=:p limit 1"),
+        {"p": product_id},
+    ).fetchone()
     if not row:
         return None
     return {"type_id": int(row[0]), "product_id": int(row[1]), "activity": row[2], "materials": row[3]}
 
 
 def build_bom_tree(product_id: int, max_depth: int = 4) -> BOMNode | None:
-    with _engine().connect() as conn:
+    with get_engine().connect() as conn:
         bp = _blueprint_for_product(conn, product_id)
         if not bp:
             return None

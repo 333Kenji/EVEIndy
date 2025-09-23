@@ -1,15 +1,10 @@
 from __future__ import annotations
 
-from typing import Dict, Iterable, List, Mapping, Optional
+from typing import Dict, Iterable, Mapping, Optional
 
-import sqlalchemy as sa
 from sqlalchemy import text
 
-from app.config import Settings
-
-
-def _engine():
-    return sa.create_engine(Settings().database_url)
+from app.db import get_engine
 
 
 def get_on_hand(owner_scope: str, type_ids: Optional[Iterable[int]] = None) -> Mapping[int, Dict[str, float]]:
@@ -30,7 +25,7 @@ def get_on_hand(owner_scope: str, type_ids: Optional[Iterable[int]] = None) -> M
     if type_ids:
         params["ids"] = list(type_ids)
     out: Dict[int, Dict[str, float]] = {}
-    with _engine().connect() as conn:
+    with get_engine().connect() as conn:
         for t_id, qty, avg in conn.execute(sql, params):
             out[int(t_id)] = {"qty": float(qty), "avg_cost": float(avg)}
     return out
@@ -50,7 +45,7 @@ def get_wip(owner_scope: str) -> Mapping[int, float]:
         """
     )
     out: Dict[int, float] = {}
-    with _engine().connect() as conn:
+    with get_engine().connect() as conn:
         for t_id, w in conn.execute(sql, {"owner": owner_scope}):
             out[int(t_id)] = float(w or 0)
     return out

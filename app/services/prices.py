@@ -3,12 +3,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
-from typing import Iterable, Sequence
+from typing import Sequence
 
-import sqlalchemy as sa
 from sqlalchemy import text
 
-from app.config import Settings
+from app.db import get_engine
 
 
 @dataclass(frozen=True)
@@ -25,10 +24,6 @@ class Quote:
     stdev_pct: Decimal | None
     spread: Decimal
     ts: datetime
-
-
-def _engine():
-    return sa.create_engine(Settings().database_url)
 
 
 def latest_quotes(region_id: int, type_ids: Sequence[int]) -> list[Quote]:
@@ -71,7 +66,7 @@ def latest_quotes(region_id: int, type_ids: Sequence[int]) -> list[Quote]:
     # sqlalchemy passes arrays differently per dialect; for psycopg2 we can pass list
     params = {"region_id": region_id, "type_ids": list(type_ids)}
     out: list[Quote] = []
-    with _engine().connect() as conn:
+    with get_engine().connect() as conn:
         for row in conn.execute(sql, params):
             out.append(
                 Quote(

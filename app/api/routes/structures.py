@@ -3,19 +3,12 @@ from __future__ import annotations
 from typing import Any, Dict, List
 
 from fastapi import APIRouter, Query
-import sqlalchemy as sa
 from sqlalchemy import text
 
-from app.config import Settings
+from app.db import get_engine
 
 
 router = APIRouter(prefix="/structures", tags=["structures"])
-
-
-def _engine():
-    return sa.create_engine(Settings().database_url)
-
-
 FALLBACK_RIGS = [
     {"rig_id": 1001, "name": "Manufacturing Material Efficiency I", "activity": "Manufacturing", "me_bonus": 0.02, "te_bonus": 0.0},
     {"rig_id": 1002, "name": "Manufacturing Time Efficiency I", "activity": "Manufacturing", "me_bonus": 0.0, "te_bonus": 0.02},
@@ -30,7 +23,7 @@ FALLBACK_RIGS = [
 def list_rigs(activity: str | None = Query(default=None)) -> Dict[str, List[Dict[str, Any]]]:
     sql = text("select rig_id, name, activity, me_bonus, te_bonus from rigs")
     try:
-        with _engine().connect() as conn:
+        with get_engine().connect() as conn:
             rows = conn.execute(sql).fetchall()
             rigs = [
                 {
