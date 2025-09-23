@@ -1,0 +1,81 @@
+version: "3.9"
+services:
+  db:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: eve
+      POSTGRES_PASSWORD: secret
+      POSTGRES_DB: eveindy
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U eve -d eveindy"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+  redis:
+    image: redis:7
+    ports:
+      - "6379:6379"
+    volumes:
+      - redisdata:/data
+  api:
+    image: python:3.12-slim
+    working_dir: /app
+    volumes:
+      - ./:/app
+    environment:
+      DATABASE_URL: postgresql+psycopg2://eve:secret@db:5432/eveindy
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    command: /bin/sh -c "pip install -r requirements.txt && python -m alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"
+    ports:
+      - "8000:8000"
+  worker:
+    image: python:3.12-slim
+    working_dir: /app
+    volumes:
+      - ./:/app
+    environment:
+      DATABASE_URL: postgresql+psycopg2://eve:secret@db:5432/eveindy
+      REDIS_URL: redis://redis:6379/0
+      PRICE_PROVIDER: adam4eve
+      REGION_ID: 10000002
+      PRICE_TYPE_IDS: 16272,16273,44,3689,9832
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    command: /bin/sh -c "pip install -r requirements.txt && celery -A celery_app.celery_app worker -Q price,indices,indicators -c 2"
+  beat:
+    image: python:3.12-slim
+    working_dir: /app
+    volumes:
+      - ./:/app
+    environment:
+      DATABASE_URL: postgresql+psycopg2://eve:secret@db:5432/eveindy
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      redis:
+        condition: service_started
+    command: /bin/sh -c "pip install -r requirements.txt && celery -A celery_app.celery_app beat"
+  frontend:
+    image: node:18-alpine
+    working_dir: /app
+    volumes:
+      - ./:/app
+    depends_on:
+      - api
+    command: /bin/sh -c "cd frontend && (npm ci || npm install) && npm run dev -- --host 0.0.0.0"
+    ports:
+      - "5173:5173"
+volumes:
+  pgdata:
+  redisdata:

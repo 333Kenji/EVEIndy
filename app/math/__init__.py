@@ -1,25 +1,41 @@
-"""Pure math helpers placeholder.
-
-Functions here must stay side-effect free so unit tests can enforce determinism.
-"""
+"""Compatibility layer re-exporting the stateless math core."""
 
 from __future__ import annotations
 
-from typing import Sequence
+from indy_math import (
+    BollingerBands,
+    CostContext,
+    CostResult,
+    DepthForecast,
+    DepthPoint,
+    DepthSummary,
+    PricePolicy,
+    SPPDiagnostics,
+    SPPResult,
+    bollinger_bands,
+    cost_item,
+    moving_average,
+    recommend_batch_size,
+    shallow_depth_metrics,
+    simple_volatility,
+    spp_lead_time_aware,
+)
 
-
-def identity(value: float) -> float:
-    """Return the supplied value unchanged."""
-
-    return value
-
-
-def mean(values: Sequence[float]) -> float:
-    """Compute a deterministic arithmetic mean for non-empty sequences."""
-
-    if not values:
-        raise ValueError("values must contain at least one entry")
-    return sum(values) / len(values)
-
-
-__all__ = ["identity", "mean"]
+__all__ = [
+    "BollingerBands",
+    "CostContext",
+    "CostResult",
+    "DepthForecast",
+    "DepthPoint",
+    "DepthSummary",
+    "PricePolicy",
+    "SPPDiagnostics",
+    "SPPResult",
+    "bollinger_bands",
+    "cost_item",
+    "moving_average",
+    "recommend_batch_size",
+    "shallow_depth_metrics",
+    "simple_volatility",
+    "spp_lead_time_aware",
+]

@@ -1,0 +1,9 @@
+603:
+  activities:
+    manufacturing:
+      materials:
+        - typeID: 34
+          quantity: 10
+      products:
+        - typeID: 603
+          quantity: 1

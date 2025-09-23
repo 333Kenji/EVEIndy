@@ -21,3 +21,4 @@ IndyCalculator/
 
 # Node (if you add a frontend later)
 node_modules/
+data/sde/

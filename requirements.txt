@@ -3,6 +3,7 @@ fastapi==0.110.2
 uvicorn[standard]==0.29.0
 sqlalchemy==2.0.29
 alembic==1.13.1
+psycopg2-binary==2.9.9
 pydantic==2.6.4
 pydantic-settings==2.2.1
 
@@ -10,6 +11,7 @@ pydantic-settings==2.2.1
 celery==5.3.6
 apscheduler==3.10.4
 redis==5.0.3
+PyYAML==6.0.1
 
 # Data analysis
 pandas==2.2.1
@@ -26,7 +28,7 @@ pytest==8.1.1
 pytest-asyncio==0.23.5
 coverage==7.4.3
 vcrpy==4.3.1
-fakeredis==2.20.2
+fakeredis==2.31.3
 
 # Tooling
 black==24.3.0

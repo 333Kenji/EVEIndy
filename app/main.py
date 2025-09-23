@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from fastapi import FastAPI, status
+from fastapi.middleware.cors import CORSMiddleware
+from .sde_autoload import schedule_autoload
 
 from .api import router as api_router
 from .dependencies import get_settings
@@ -10,12 +12,27 @@ from .dependencies import get_settings
 app = FastAPI(title="EVEINDY API", version="0.1.0")
 app.include_router(api_router)
 
+# Enable CORS for local frontend dev (Vite default port)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 
 @app.on_event("startup")
 def load_settings_cache() -> None:
     """Prime configuration cache during startup."""
 
     get_settings()
+    # Start SDE autoload scheduler
+    try:
+        schedule_autoload()
+    except Exception:
+        # Do not crash the app if scheduler fails to start
+        pass
 
 
 @app.get("/health/live", status_code=status.HTTP_200_OK, include_in_schema=False)

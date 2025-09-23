@@ -125,6 +125,17 @@ Checklist:
 - Inventory mutations executed via Postgres transactions with `SELECT ... FOR UPDATE` on `inventory`/`inventory_by_loc` rows to guarantee exactly-once updates.
 - Profile math core to ensure pure functions execute in <25 ms per batch under median scenarios; memoize blueprint trees within request context only (no globals).
 
+## Rate Limits & Provider Guardrails
+- Central RateLimiter (token bucket) tracks calls per provider/endpoint with configurable capacity and refill rates per provider (e.g., ESI per-route, Adam4EVE polite 10s, Fuzzwork regional intervals).
+- Adapters call `RateLimiter.block_until_allowed(key)` before outbound requests; retry with exponential backoff and circuit breakers remain in place.
+- Emit basic counters per key: `allowed`, `denied`, `delayed`; expose via metrics endpoint later.
+- Configuration: env-driven defaults; tune per environment without code changes.
+
+## SDE Update Workflow (Dev-only)
+- SDE Manager (`python utils/manage_sde.py update --from-file path/to/sde.yaml`) parses only required subsets (T2 frigates/cruisers; reaction chains; relevant structures, rigs; system/region/constellation IDs) into compact JSON or inserts into Postgres.
+- Store artifacts under `data/sde/` (gitignored). Production images never bundle raw SDE; developers refresh locally when CCP publishes new drops.
+- Schema added for SDE subsets: `type_ids`, `blueprints`, `structures`, `cost_indices` for convenience joins; migrations are idempotent and versioned.
+
 # Security, Secrets, and Tokens
 - Store ESI refresh/access tokens encrypted (e.g., envelope encryption with KMS); rotate tokens every 30 days or on scope change.
 - Secrets injected via environment variables or secret manager; `.env` files excluded from VCS.
