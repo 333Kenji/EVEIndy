@@ -215,6 +215,19 @@ Depends on: T-0077, T-0017 (quotes)
 Estimate: M
 Owner: (unset)
 Tags: [math] [api] [docs] [tests]
+
+- [ ] TASK: CEO OAuth + API Key Persistence (id: T-0083)
+Why: Allow corporation leadership to authorize ESI scopes and keep their CEO API access connected to IndyCalculator.
+Deliverables: OAuth client configuration for EULine/EVE SSO with full-scope CEO permissions, persistent token/key storage in the backend, session-backed login flow exposed via the API, `.env.example` updates, and a frontend login/authorization screen that drives the flow end-to-end.
+Acceptance:
+  - Initiating login from the app UI opens the OAuth screen, lets the user pick a character, and returns showing the active character with granted scopes.
+  - Access/refresh tokens (or API key payload) are encrypted/persisted so the CEO stays authenticated across browser sessions and server restarts.
+  - Backend endpoints expose login status and refresh tokens automatically before expiry; manual logout clears stored credentials.
+Depends on: T-0001, T-0002, T-0031
+Estimate: L
+Owner: (unset)
+Tags: [api] [ui] [ops]
+
 - [ ] TASK: Calculator Math Wiring to Endpoints (id: T-0044)
 Why: Ensure live math reflects UI changes.
 Deliverables: Frontend calls to backend math endpoints where applicable; fallback to pure functions for local interactions.
