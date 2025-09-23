@@ -23,6 +23,51 @@ Migration checklist:
 - [ ] Views: `inventory_coverage_view` aggregating `inventory_by_loc` buckets for API.
 - [ ] Ensure referential integrity with `ON UPDATE CASCADE` for dependent IDs from ESI.
 
+# Industry Calculations & Static Data Alignment
+- **Scope**: Formalize the "industry core" alongside the math core so that manufacturing, research, invention, reactions, and planetary industry calculations are deterministic, replayable, and backed by static data from the SDE mirror.
+- **Activities & Flows**:
+  - *Manufacturing*: Blueprint (BPO/BPC) + inputs (minerals, PI goods, components, R.A.M./R.Db, etc.) → finished item. Respect run counts and output quantities declared on the blueprint activity records.
+  - *Research*: BPO research for Material Efficiency (ME) and Time Efficiency (TE); calculate new ME/TE multipliers using CCP base modifiers × structure/rig/skill bonuses.
+  - *Copying*: BPO → BPC creation with finite run counts; expose copy time and run caps for downstream invention/manufacturing.
+  - *Invention*: T1 BPC + datacores + optional decryptor → probabilistic T2 BPC. Track decryptor-driven changes to ME/TE/run count and success chance adjustments from skills.
+  - *Reactions*: Raw inputs (moongoo, PI, gas) → intermediate/advanced reaction materials. Job math parallels manufacturing (SCI, facility modifiers, tax), but uses refinery structure modifiers and reaction-specific rigs.
+  - *Reprocessing*: Ores/ice/salvage → refined minerals/parts using reprocessing skills, implant bonuses, and structure rigs; outputs feed manufacturing inputs.
+  - *Planetary Industry*: Planet resource chains from P0 → P1/P2/P3/P4 with extractor-head cycles, facility tax, and routing/storage losses.
+- **Blueprint Constructs**:
+  - Persist BPO vs BPC distinctions: BPOs have infinite runs and allow research/copy; BPCs have finite runs, carry ME/TE, and feed manufacturing/invention.
+  - Track ME/TE separately per blueprint copy, storing multipliers in normalized tables so calculations can retrieve canonical efficiencies.
+  - T2 BPCs produced by invention are immutable (no further research/copy); store provenance for audit and downstream profitability.
+- **Job Cost & Time Model**:
+  - Job cost formula: `estimated_item_value × (system_cost_index × structure_modifier + facility_tax + scc_surcharge [+ alpha_surcharge])`; ensure each factor is a column or joinable attribute for deterministic recompute.
+  - Job time formula: `base_time × time_modifiers(structure, rigs, skills, TE)`; maintain TE as a fractional multiplier.
+  - System Cost Index (SCI) is activity-specific and system-wide; store historical SCI snapshots keyed by system + activity for replay analysis.
+- **Static Data Requirements** (SDE mirror → local schema):
+  - `type_ids`: Item metadata (category, group, market flags) to align blueprint outputs and reaction inputs.
+  - `blueprints`: Activity rows (manufacturing, research, copying, invention, reactions) with base times, base materials, products, and required skills.
+  - `ram_activities` / `industry_activity_materials` / `industry_activity_products`: Normalized tables to hydrate job graphs without bespoke parsing.
+  - `mapSolarSystems`, `mapConstellations`, `mapRegions`: For SCI joins and facility location metadata.
+  - `staStations` / structure definitions: Provide default tax rates, rig compatibility, and service availability.
+  - `invTraits` / `dgmTypeAttributes`: Pull ME/TE caps, decryptor modifiers, and reaction-specific flags (simple vs complex).
+- **Industry Core Module**:
+  - Create a pure `indy_industry` module parallel to `indy_math`, exposing deterministic functions such as `compute_job_cost`, `compute_job_time`, `calculate_materials_needed`, `simulate_invention`, and `simulate_reaction`.
+  - Inputs: immutable contexts composed of blueprint records, SDE-derived modifiers, character skills, structure/rig bonuses, and pricing feeds when required for ISK valuation.
+  - Outputs: structured results (e.g., `JobCostBreakdown`, `MaterialConsumption`, `InventionOutcomeDistribution`) that can be stored alongside job executions and reused for audit.
+- **Schema Alignment Goals**:
+  - Normalize blueprint hierarchies so the database can materialize full material trees (manufacturing → reaction → PI) without ad-hoc joins.
+  - Persist job execution summaries referencing blueprint ID, runs, ME/TE snapshot, facility, SCI, and calculated cost/time. This enables recomputation and supports profitability dashboards.
+  - Ensure PI chains are represented as adjacency lists or recipes so production planners can derive required extractor and factory counts.
+  - Mirror invention outcomes (success chance, resulting runs, ME/TE) to allow deterministic simulation and backtesting against actual job logs.
+- **Profitability & Sensitivity**:
+  - Track key levers—ME/TE, structure modifiers, skill multipliers, SCI, taxes, SCC surcharge, alpha surcharge—so the industry core can surface contribution margins per job.
+  - Support scenario analysis: swap structures/rigs, adjust skill levels, or change SCI to evaluate sensitivity before committing jobs.
+- **Integration with Math Core**:
+  - Math core `cost_item` should delegate to industry core when a make decision occurs; industry core returns bill-of-materials expansions, job fees, time estimates, and probabilistic outputs (for invention) as pure data structures.
+  - Maintain strict purity: no DB/network access inside industry core; contexts assembled by service layer using cached SDE data.
+- **Testing Commitments**:
+  - Golden fixtures per activity type (manufacturing, invention success/failure paths, reactions, PI chains) to assert deterministic outputs.
+  - Property tests for invariants (e.g., ME/TE never increase material/time requirements beyond baseline; invention probability sums = 1).
+  - Cross-verify job cost/time outputs against CCP examples to validate formulas.
+
 # Core Algorithms ("math core")
 ```python
 @dataclass(frozen=True)
