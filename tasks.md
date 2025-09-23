@@ -215,6 +215,18 @@ Depends on: T-0077, T-0017 (quotes)
 Estimate: M
 Owner: (unset)
 Tags: [math] [api] [docs] [tests]
+
+- [ ] TASK: UI — Item Filter Preview (id: T-0083)
+Why: Let users scope inventory/products from the UI before committing to calculations or exports.
+Deliverables: React filter panel with selectors backed by DB metadata (category, group, meta level, blueprint/inventory flags); TanStack Query hook and API client for `/items/preview`; FastAPI endpoint + service method translating filters into SQL against `type_ids`/inventory tables; Vitest + API tests covering filter combinations.
+Acceptance:
+  - Changing any selector updates the request payload and clicking "Preview Item List" fetches filtered results from the database and renders name/type/quantity rows.
+  - All filter controls derive their option lists from live DB values rather than hard-coded enums.
+  - Preview endpoint enforces filter predicates (category, group, meta, blueprint/inventory) in generated SQL and returns only matching rows; tests assert representative combinations.
+Depends on: T-0008 (API surface), T-0039, T-0040 (type_ids + inventory schema)
+Estimate: M
+Owner: (unset)
+Tags: [ui] [api] [db] [tests]
 - [ ] TASK: Calculator Math Wiring to Endpoints (id: T-0044)
 Why: Ensure live math reflects UI changes.
 Deliverables: Frontend calls to backend math endpoints where applicable; fallback to pure functions for local interactions.
