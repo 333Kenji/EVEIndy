@@ -913,3 +913,49 @@ Acceptance:
 Estimate: S
 Owner: (unset)
 Tags: [ui] [api]
+
+# Sprint 6 — Refactor Prep
+
+- [ ] TASK: Session Manager Extraction (id: T-0101)
+Why: Replace per-service engine creation with a shared session factory to simplify transactions and testing.
+Deliverables: `app/db/session.py` module exporting engine/session helpers; services and tasks refactored to consume it; tests covering reuse and cleanup.
+Acceptance:
+  - All services import the shared session helper; no direct `sa.create_engine` calls remain in services/workers.
+  - pytest suite confirms transactions are reused safely and teardown closes connections.
+Depends on: T-0077, T-0078, T-0047 (stabilized tests)
+Estimate: M
+Owner: (unset)
+Tags: [core] [db] [refactor]
+
+- [ ] TASK: Cache Facade Cleanup (id: T-0102)
+Why: Avoid direct `_get_value`/`_set_value` access so cache strategies can be swapped without touching services.
+Deliverables: helper functions in `app/cache_helpers.py`; services updated to use helpers; metrics emitted on cache hit/miss/stale.
+Acceptance:
+  - Services call public helpers only; no lingering `_get_value`/`_set_value` references.
+  - Cache metrics visible under `/metrics` or logs for hits/misses/stale.
+Depends on: T-0101
+Estimate: M
+Owner: (unset)
+Tags: [core] [cache] [ops]
+
+- [ ] TASK: Repository Implementations for Workers (id: T-0103)
+Why: Provide concrete Postgres-backed repositories that satisfy `app.repos` protocols ahead of worker refactors.
+Deliverables: `app/repos/pg_inventory.py`, `app/repos/pg_jobs.py`; unit tests with fakes; worker wiring updated.
+Acceptance:
+  - Workers import the new repositories and no longer touch SQL directly.
+  - Tests cover reserve/release/settle flows and job upserts with idempotency.
+Depends on: T-0101, T-0078
+Estimate: M
+Owner: (unset)
+Tags: [db] [workers] [refactor]
+
+- [ ] TASK: Typed API Contracts (id: T-0104)
+Why: Lock request/response models before generating client SDKs and undertaking larger refactors.
+Deliverables: Pydantic models for analytics, costing, planner, inventory routes; OpenAPI schema regenerated; docs updated.
+Acceptance:
+  - Routes use typed models; validation errors return structured responses.
+  - Frontend client stubs generated or updated from the new OpenAPI definition.
+Depends on: T-0043, T-0044, T-0079
+Estimate: M
+Owner: (unset)
+Tags: [api] [docs] [refactor]

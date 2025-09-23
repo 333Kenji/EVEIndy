@@ -15,6 +15,7 @@ EVEINDY orchestrates manufacturing, inventory control, and market intelligence f
 - Consume ESI endpoints for industry jobs, assets, skills, and system cost indices only within published cache timers and enforce throttles to stay below rate limits.
 - Retrieve price and liquidity data via pluggable Adam4EVE or Fuzzwork providers, caching responses with timestamps and refreshing on a polite cadence (~10-15 min for prices, daily for indices).
 - Wrap every external data provider with an interface that implements retries with exponential backoff and circuit-breaker protection before surfacing data to the app.
+- Support offline-first SDE ingestion by scanning `data/SDE/_downloads` on a bounded cadence; autoloaders must verify manifests/checksums and remain idempotent so a failed import never corrupts the subset schema.
 
 ## Persistence & Caching Rules
 - Store durable state (inventory, jobs, acquisitions, consumptions, buy orders, snapshots, telemetry) exclusively in Postgres schemas managed by migrations.
