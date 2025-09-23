@@ -29,6 +29,12 @@ def post_quotes(payload: dict[str, Any]):
                 "bid": str(q.bid),
                 "ask": str(q.ask),
                 "mid": str(q.mid),
+                "bid_qty": str(q.bid_qty),
+                "ask_qty": str(q.ask_qty),
+                "depth_qty_1pct": str(q.depth_qty_1pct),
+                "depth_qty_5pct": str(q.depth_qty_5pct),
+                "stdev_pct": str(q.stdev_pct) if q.stdev_pct is not None else None,
+                "spread": str(q.spread),
                 "ts": q.ts.isoformat(),
             }
             for q in quotes
